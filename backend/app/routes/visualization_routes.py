@@ -1,0 +1,312 @@
+from flask import Blueprint, jsonify, request
+from . import train_routes
+from . import tuning_routes
+from .utils import get_json_body
+import matplotlib.pyplot as plt
+import seaborn as sns
+import io
+import base64
+import pandas as pd
+import numpy as np
+import logging
+import torch
+from torch.utils.data import Subset
+
+logger = logging.getLogger(__name__)
+viz_bp = Blueprint('visualization', __name__)
+
+def get_dataset_class_names(dataset_name):
+    if dataset_name == 'cifar10':
+        return ['airplane', 'automobile', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck']
+    return [str(i) for i in range(10)]
+
+def extract_labels(dataset):
+    """Extract labels from regular datasets or nested Subset instances."""
+    if isinstance(dataset, Subset):
+        parent_labels = extract_labels(dataset.dataset)
+        return [parent_labels[int(index)] for index in dataset.indices]
+
+    if hasattr(dataset, 'targets'):
+        targets = dataset.targets
+        if torch.is_tensor(targets):
+            targets = targets.tolist()
+        return [int(target) for target in targets]
+
+    if hasattr(dataset, 'labels'):
+        labels = dataset.labels
+        if torch.is_tensor(labels):
+            labels = labels.tolist()
+        return [int(label) for label in labels]
+
+    labels = []
+    for _, target in dataset:
+        if torch.is_tensor(target):
+            target = target.item()
+        labels.append(int(target))
+    return labels
+
+def compute_distribution_stats(count_matrix):
+    if count_matrix.size == 0 or count_matrix.sum() == 0:
+        return {
+            'class_balance': 0,
+            'data_quality': 0,
+            'sample_quantity': 0,
+            'feature_diversity': 0,
+            'data_consistency': 0
+        }
+
+    client_totals = count_matrix.sum(axis=1)
+    non_empty = client_totals > 0
+    non_empty_counts = count_matrix[non_empty]
+    non_empty_totals = client_totals[non_empty]
+    num_classes = count_matrix.shape[1]
+
+    distributions = non_empty_counts / non_empty_totals[:, np.newaxis]
+    entropy = -np.sum(np.where(distributions > 0, distributions * np.log(distributions + 1e-12), 0), axis=1)
+    class_balance = float(np.mean(entropy / np.log(max(num_classes, 2))) * 100)
+
+    expected_total = np.mean(non_empty_totals)
+    sample_cv = np.std(non_empty_totals) / expected_total if expected_total else 0
+    sample_quantity = float(max(0, min(100, 100 * (1 - sample_cv))))
+
+    global_distribution = count_matrix.sum(axis=0)
+    covered_classes = np.count_nonzero(global_distribution)
+    feature_diversity = float((covered_classes / num_classes) * 100) if num_classes else 0
+
+    client_class_presence = np.count_nonzero(non_empty_counts, axis=1)
+    data_quality = float(np.mean(client_class_presence / num_classes) * 100) if num_classes else 0
+
+    global_dist = global_distribution / global_distribution.sum()
+    mean_abs_deviation = np.mean(np.abs(distributions - global_dist))
+    data_consistency = float(max(0, min(100, 100 * (1 - mean_abs_deviation * num_classes / 2))))
+
+    return {
+        'class_balance': round(class_balance, 1),
+        'data_quality': round(data_quality, 1),
+        'sample_quantity': round(sample_quantity, 1),
+        'feature_diversity': round(feature_diversity, 1),
+        'data_consistency': round(data_consistency, 1)
+    }
+
+@viz_bp.route('/training_curves', methods=['GET'])
+def get_training_curves():
+    """获取训练曲线数据"""
+    try:
+        if train_routes.fl_system is None:
+            return jsonify({'error': 'No training data available'}), 400
+
+        history = train_routes.fl_system.get_training_history()
+        if not history:
+            return jsonify({'error': 'No training history available'}), 400
+
+        # 提取数据
+        rounds = [h['round'] for h in history]
+        global_accuracies = [h['global_metrics']['accuracy'] for h in history]
+        global_losses = [h['global_metrics']['loss'] for h in history]
+
+        # 客户端数据
+        client_accuracies = []
+        client_losses = []
+        for h in history:
+            client_accs = [m['accuracy'] for m in h['client_metrics']]
+            client_losses_list = [m['loss'] for m in h['client_metrics']]
+            client_accuracies.append(client_accs)
+            client_losses.append(client_losses_list)
+
+        return jsonify({
+            'rounds': rounds,
+            'global_accuracies': global_accuracies,
+            'global_losses': global_losses,
+            'client_accuracies': client_accuracies,
+            'client_losses': client_losses
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error getting training curves: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@viz_bp.route('/model_performance', methods=['GET'])
+def get_model_performance():
+    """获取模型性能可视化数据"""
+    try:
+        if train_routes.fl_system is None:
+            return jsonify({'error': 'No model available'}), 400
+
+        # 评估所有客户端
+        client_performance = []
+        for client in train_routes.fl_system.clients:
+            metrics = client.evaluate()
+            client_performance.append({
+                'client_id': client.client_id,
+                'accuracy': metrics['accuracy'],
+                'loss': metrics['loss'],
+                'num_samples': metrics['num_samples']
+            })
+
+        # 创建性能对比数据
+        df = pd.DataFrame(client_performance)
+        performance_data = {
+            'client_ids': df['client_id'].tolist(),
+            'accuracies': df['accuracy'].tolist(),
+            'losses': df['loss'].tolist(),
+            'sample_sizes': df['num_samples'].tolist(),
+            'stats': {
+                'mean_accuracy': float(df['accuracy'].mean()),
+                'std_accuracy': float(df['accuracy'].std()),
+                'mean_loss': float(df['loss'].mean()),
+                'std_loss': float(df['loss'].std())
+            }
+        }
+
+        return jsonify(performance_data), 200
+
+    except Exception as e:
+        logger.error(f"Error getting model performance: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@viz_bp.route('/confusion_matrix', methods=['POST'])
+def get_confusion_matrix():
+    """生成混淆矩阵数据"""
+    try:
+        data, error_response = get_json_body()
+        if error_response:
+            return error_response
+        dataset_name = data.get('dataset_name', 'mnist')
+
+        # 模拟混淆矩阵数据
+        if dataset_name not in ('mnist', 'cifar10'):
+            return jsonify({'error': 'Unsupported dataset'}), 400
+
+        num_classes = 10
+        class_names = get_dataset_class_names(dataset_name)
+
+        # 生成模拟混淆矩阵
+        if train_routes.fl_system is None or not train_routes.fl_system.clients:
+            return jsonify({'error': 'No model available'}), 400
+
+        model = train_routes.fl_system.global_model
+        device = train_routes.fl_system.device
+        model.eval()
+        confusion_counts = np.zeros((num_classes, num_classes), dtype=np.int64)
+
+        # 对角线设置更高的值（正确预测）
+        with torch.no_grad():
+            for client in train_routes.fl_system.clients:
+                for inputs, targets in client.test_loader:
+                    inputs = inputs.to(device)
+                    outputs = model(inputs)
+                    predictions = outputs.argmax(dim=1).cpu().numpy()
+                    actuals = targets.cpu().numpy()
+                    for actual, predicted in zip(actuals, predictions):
+                        if 0 <= int(actual) < num_classes and 0 <= int(predicted) < num_classes:
+                            confusion_counts[int(actual), int(predicted)] += 1
+
+        # 归一化
+        row_sums = confusion_counts.sum(axis=1, keepdims=True)
+        confusion_matrix = np.divide(
+            confusion_counts,
+            row_sums,
+            out=np.zeros_like(confusion_counts, dtype=float),
+            where=row_sums != 0
+        )
+
+        return jsonify({
+            'class_names': class_names,
+            'confusion_matrix': confusion_matrix.tolist(),
+            'confusion_counts': confusion_counts.tolist(),
+            'matrix_orientation': 'rows=actual, columns=predicted'
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error generating confusion matrix: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@viz_bp.route('/client_distribution', methods=['GET'])
+def get_client_distribution():
+    """获取客户端数据分布可视化"""
+    try:
+        if train_routes.fl_system is None or not train_routes.fl_system.clients:
+            return jsonify({'error': 'No client data available'}), 400
+
+        # 模拟客户端数据分布
+        num_clients = len(train_routes.fl_system.clients)
+        num_classes = 10
+        class_names = get_dataset_class_names(getattr(train_routes.fl_system, 'dataset_name', 'mnist'))
+
+        # 生成每个客户端的类别分布
+        client_distributions = []
+        count_rows = []
+        for client in train_routes.fl_system.clients:
+            labels = extract_labels(client.train_loader.dataset)
+            counts = np.bincount(labels, minlength=num_classes)[:num_classes]
+            total = int(counts.sum())
+            distribution = (counts / total).tolist() if total else [0] * num_classes
+            count_rows.append(counts)
+            client_distributions.append({
+                'client_id': client.client_id,
+                'distribution': distribution,
+                'counts': counts.astype(int).tolist(),
+                'num_samples': total
+            })
+
+        return jsonify({
+            'num_clients': num_clients,
+            'num_classes': num_classes,
+            'class_names': class_names,
+            'client_distributions': client_distributions,
+            'stats': compute_distribution_stats(np.array(count_rows, dtype=float))
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error getting client distribution: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@viz_bp.route('/hyperparameter_analysis', methods=['POST'])
+def hyperparameter_analysis():
+    """超参数分析可视化"""
+    try:
+        data, error_response = get_json_body()
+        if error_response:
+            return error_response
+        param_name = data.get('param_name', 'learning_rate')
+
+        # 模拟超参数分析数据
+        if train_routes.fl_system is None:
+            return jsonify({
+                'param_name': param_name,
+                'results': [],
+                'message': 'No training run available for hyperparameter analysis'
+            }), 200
+
+        history = train_routes.fl_system.get_training_history()
+        if not history:
+            return jsonify({
+                'param_name': param_name,
+                'results': [],
+                'message': 'No training history available for hyperparameter analysis'
+            }), 200
+
+        latest_metrics = history[-1]['global_metrics']
+        param_value_map = {
+            'learning_rate': train_routes.fl_system.server_lr,
+            'server_lr': train_routes.fl_system.server_lr,
+            'server_momentum': train_routes.fl_system.server_momentum,
+            'proximal_mu': train_routes.fl_system.proximal_mu,
+            'adaptive_beta1': train_routes.fl_system.adaptive_beta1,
+            'adaptive_beta2': train_routes.fl_system.adaptive_beta2,
+            'adaptive_tau': train_routes.fl_system.adaptive_tau
+        }
+        performances = [{
+            'param_value': float(param_value_map.get(param_name, train_routes.fl_system.server_lr)),
+            'accuracy': float(latest_metrics.get('accuracy', 0)),
+            'loss': float(latest_metrics.get('loss', 0)),
+            'source': 'current_training_run'
+        }]
+        return jsonify({
+            'param_name': param_name,
+            'results': performances
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error in hyperparameter analysis: {str(e)}")
+        return jsonify({'error': str(e)}), 500

@@ -1,0 +1,16 @@
+flask==2.3.3
+flask-cors==4.0.0
+
+torch
+torchvision
+numpy
+pandas
+
+matplotlib==3.7.2
+seaborn==0.12.2
+
+opencv-python==4.8.0.76
+tensorboard==2.14.0
+optuna
+wandb==0.15.10
+psutil==5.9.5
