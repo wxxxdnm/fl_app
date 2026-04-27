@@ -1,6 +1,5 @@
 from flask import Blueprint, jsonify, request
 from . import train_routes
-from . import tuning_routes
 from .utils import get_json_body
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -261,52 +260,3 @@ def get_client_distribution():
         logger.error(f"Error getting client distribution: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
-@viz_bp.route('/hyperparameter_analysis', methods=['POST'])
-def hyperparameter_analysis():
-    """超参数分析可视化"""
-    try:
-        data, error_response = get_json_body()
-        if error_response:
-            return error_response
-        param_name = data.get('param_name', 'learning_rate')
-
-        # 模拟超参数分析数据
-        if train_routes.fl_system is None:
-            return jsonify({
-                'param_name': param_name,
-                'results': [],
-                'message': 'No training run available for hyperparameter analysis'
-            }), 200
-
-        history = train_routes.fl_system.get_training_history()
-        if not history:
-            return jsonify({
-                'param_name': param_name,
-                'results': [],
-                'message': 'No training history available for hyperparameter analysis'
-            }), 200
-
-        latest_metrics = history[-1]['global_metrics']
-        param_value_map = {
-            'learning_rate': train_routes.fl_system.server_lr,
-            'server_lr': train_routes.fl_system.server_lr,
-            'server_momentum': train_routes.fl_system.server_momentum,
-            'proximal_mu': train_routes.fl_system.proximal_mu,
-            'adaptive_beta1': train_routes.fl_system.adaptive_beta1,
-            'adaptive_beta2': train_routes.fl_system.adaptive_beta2,
-            'adaptive_tau': train_routes.fl_system.adaptive_tau
-        }
-        performances = [{
-            'param_value': float(param_value_map.get(param_name, train_routes.fl_system.server_lr)),
-            'accuracy': float(latest_metrics.get('accuracy', 0)),
-            'loss': float(latest_metrics.get('loss', 0)),
-            'source': 'current_training_run'
-        }]
-        return jsonify({
-            'param_name': param_name,
-            'results': performances
-        }), 200
-
-    except Exception as e:
-        logger.error(f"Error in hyperparameter analysis: {str(e)}")
-        return jsonify({'error': str(e)}), 500

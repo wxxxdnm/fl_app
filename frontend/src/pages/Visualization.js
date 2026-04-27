@@ -41,8 +41,7 @@ const Visualization = () => {
     clientPerformance: [],
     confusionMatrix: { data: [], classes: [] },
     clientDistribution: [],
-    distributionStats: [],
-    hyperparameterAnalysis: []
+    distributionStats: []
   });
 
   useEffect(() => {
@@ -82,51 +81,9 @@ const Visualization = () => {
         const confusionData = await confusionResponse.json();
         setChartData(prev => ({ ...prev, confusionMatrix: formatConfusionMatrixData(confusionData) }));
       }
-
-      const hyperparameterResponse = await fetch('http://localhost:5000/api/tuning/history');
-      if (hyperparameterResponse.ok) {
-        const hyperparameterData = await hyperparameterResponse.json();
-        setChartData(prev => ({ ...prev, hyperparameterAnalysis: formatHyperparameterData(hyperparameterData) }));
-      }
     } catch (error) {
       console.error('加载可视化数据失败', error);
     }
-  };
-
-  const formatConfusionMatrixData = (data) => {
-    if (!data || !data.confusion_matrix || !data.class_names) return { data: [], classes: [] };
-
-    const formatted = [];
-    const matrix = data.confusion_matrix;
-    const classes = data.class_names;
-
-    for (let i = 0; i < matrix.length; i += 1) {
-      for (let j = 0; j < matrix[i].length; j += 1) {
-        formatted.push({
-          actual: classes[i],
-          predicted: classes[j],
-          value: parseFloat((matrix[i][j] * 100).toFixed(1))
-        });
-      }
-    }
-    return { data: formatted, classes };
-  };
-
-  const formatHyperparameterData = (data) => {
-    const trials = data?.trials || data?.results || [];
-    return trials
-      .filter(item => item.state ? item.state === 'COMPLETE' && item.value !== null : item.accuracy !== undefined)
-      .map(item => {
-        const params = item.params || {};
-        const paramValue = params.client_lr ?? params.learning_rate ?? item.param_value;
-        const accuracy = item.value ?? item.accuracy;
-        return {
-          trial: item.trial ?? '',
-          learningRate: Number(paramValue || 0).toExponential(2),
-          accuracy,
-          loss: item.loss
-        };
-      });
   };
 
   const formatTrainingData = (data) => {
@@ -179,6 +136,25 @@ const Visualization = () => {
     { subject: '特征多样性', A: stats.feature_diversity || 0, fullMark: 100 },
     { subject: '数据一致性', A: stats.data_consistency || 0, fullMark: 100 }
   ]);
+
+  const formatConfusionMatrixData = (data) => {
+    if (!data || !data.confusion_matrix || !data.class_names) return { data: [], classes: [] };
+
+    const formatted = [];
+    const matrix = data.confusion_matrix;
+    const classes = data.class_names;
+
+    for (let i = 0; i < matrix.length; i += 1) {
+      for (let j = 0; j < matrix[i].length; j += 1) {
+        formatted.push({
+          actual: classes[i],
+          predicted: classes[j],
+          value: parseFloat((matrix[i][j] * 100).toFixed(1))
+        });
+      }
+    }
+    return { data: formatted, classes };
+  };
 
   const renderConfusionMatrix = () => {
     const matrixInfo = chartData.confusionMatrix || { data: [], classes: [] };
@@ -374,19 +350,6 @@ const Visualization = () => {
         >
           <ChartCard title="混淆矩阵">
             {renderConfusionMatrix()}
-          </ChartCard>
-
-          <ChartCard title="超参数调优分析">
-            <ResponsiveContainer width="100%" height={400}>
-              <LineChart data={chartData.hyperparameterAnalysis}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="learningRate" />
-                <YAxis domain={[0, 1]} />
-                <Tooltip />
-                <Legend />
-                <Line type="monotone" dataKey="accuracy" stroke="#52c41a" strokeWidth={2} name="准确率" dot={{ r: 4 }} />
-              </LineChart>
-            </ResponsiveContainer>
           </ChartCard>
         </Tabs.TabPane>
       </Tabs>
