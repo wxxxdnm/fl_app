@@ -1,0 +1,7 @@
+flask==2.3.3
+flask-cors==4.0.0
+numpy
+pandas
+matplotlib==3.7.2
+seaborn==0.12.2
+psutil==5.9.5
