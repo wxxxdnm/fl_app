@@ -12,7 +12,7 @@ data_manager = DataManager()
 def get_available_datasets():
     """获取可用的数据集列表"""
     try:
-        datasets = ['mnist', 'cifar10']
+        datasets = ['mnist', 'cifar10', 'cifar100']
         return jsonify({'datasets': datasets}), 200
     except Exception as e:
         logger.error(f"Error getting datasets: {str(e)}")
@@ -47,6 +47,8 @@ def load_dataset(dataset_name):
             loader = data_manager.load_mnist(train=train, batch_size=batch_size)
         elif dataset_name == 'cifar10':
             loader = data_manager.load_cifar10(train=train, batch_size=batch_size)
+        elif dataset_name == 'cifar100':
+            loader = data_manager.load_cifar100(train=train, batch_size=batch_size)
         else:
             return jsonify({'error': 'Unsupported dataset'}), 400
 

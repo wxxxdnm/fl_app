@@ -1,6 +1,7 @@
 from flask import Blueprint, jsonify, request
 from . import train_routes
 from .utils import get_json_body
+from ..services.data_manager import DataManager
 import matplotlib.pyplot as plt
 import seaborn as sns
 import io
@@ -15,9 +16,11 @@ logger = logging.getLogger(__name__)
 viz_bp = Blueprint('visualization', __name__)
 
 def get_dataset_class_names(dataset_name):
-    if dataset_name == 'cifar10':
-        return ['airplane', 'automobile', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck']
-    return [str(i) for i in range(10)]
+    try:
+        info = DataManager().get_dataset_info(dataset_name)
+        return [str(class_name) for class_name in info['classes']]
+    except Exception:
+        return [str(i) for i in range(10)]
 
 def extract_labels(dataset):
     """Extract labels from regular datasets or nested Subset instances."""
@@ -173,11 +176,11 @@ def get_confusion_matrix():
         dataset_name = data.get('dataset_name', 'mnist')
 
         # 模拟混淆矩阵数据
-        if dataset_name not in ('mnist', 'cifar10'):
+        if dataset_name not in ('mnist', 'cifar10', 'cifar100'):
             return jsonify({'error': 'Unsupported dataset'}), 400
 
-        num_classes = 10
         class_names = get_dataset_class_names(dataset_name)
+        num_classes = len(class_names)
 
         # 生成模拟混淆矩阵
         if train_routes.fl_system is None or not train_routes.fl_system.clients:
@@ -229,8 +232,8 @@ def get_client_distribution():
 
         # 模拟客户端数据分布
         num_clients = len(train_routes.fl_system.clients)
-        num_classes = 10
         class_names = get_dataset_class_names(getattr(train_routes.fl_system, 'dataset_name', 'mnist'))
+        num_classes = len(class_names)
 
         # 生成每个客户端的类别分布
         client_distributions = []

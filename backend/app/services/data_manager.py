@@ -24,6 +24,12 @@ class DataManager:
                 transforms.RandomCrop(32, padding=4),
                 transforms.ToTensor(),
                 transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
+            ]),
+            'cifar100': transforms.Compose([
+                transforms.RandomHorizontalFlip(),
+                transforms.RandomCrop(32, padding=4),
+                transforms.ToTensor(),
+                transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))
             ])
         }
 
@@ -96,6 +102,40 @@ class DataManager:
         self.dataloaders[key] = dataloader
         return dataloader
 
+    def load_cifar100(self, train: bool = True, batch_size: int = 64) -> DataLoader:
+        """加载CIFAR100数据集"""
+        if 'cifar100' not in self.datasets:
+            self.datasets['cifar100'] = datasets.CIFAR100(
+                root=self.data_dir,
+                train=True,
+                download=True,
+                transform=self.transforms['cifar100']
+            )
+
+        if train:
+            dataset = self.datasets['cifar100']
+        else:
+            dataset = datasets.CIFAR100(
+                root=self.data_dir,
+                train=False,
+                download=True,
+                transform=transforms.Compose([
+                    transforms.ToTensor(),
+                    transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))
+                ])
+            )
+
+        dataloader = DataLoader(
+            dataset,
+            batch_size=batch_size,
+            shuffle=train,
+            num_workers=2
+        )
+
+        key = f"cifar100_{'train' if train else 'test'}"
+        self.dataloaders[key] = dataloader
+        return dataloader
+
     def create_federated_datasets(self, dataset_name: str, num_clients: int,
                                 batch_size: int = 64, iid: bool = True) -> Dict[str, DataLoader]:
         """创建联邦学习数据集（IID或非IID）"""
@@ -112,6 +152,13 @@ class DataManager:
                 train=True,
                 download=True,
                 transform=self.transforms['cifar10']
+            )
+        elif dataset_name == 'cifar100':
+            full_dataset = datasets.CIFAR100(
+                root=self.data_dir,
+                train=True,
+                download=True,
+                transform=self.transforms['cifar100']
             )
         else:
             raise ValueError(f"Unsupported dataset: {dataset_name}")
@@ -214,6 +261,15 @@ class DataManager:
                 'num_classes': 10,
                 'input_shape': (3, 32, 32),
                 'classes': ['airplane', 'automobile', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck']
+            }
+        elif dataset_name == 'cifar100':
+            dataset = datasets.CIFAR100(root=self.data_dir, train=True, download=True)
+            return {
+                'name': 'CIFAR100',
+                'num_samples': len(dataset),
+                'num_classes': 100,
+                'input_shape': (3, 32, 32),
+                'classes': dataset.classes
             }
         else:
             raise ValueError(f"Unsupported dataset: {dataset_name}")

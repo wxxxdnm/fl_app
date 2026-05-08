@@ -99,7 +99,7 @@ const enrichAggregationAlgorithm = (algorithm) => {
 
 const ModelTraining = () => {
   const location = useLocation();
-  const [datasets, setDatasets] = useState(['mnist', 'cifar10']);
+  const [datasets, setDatasets] = useState(['mnist', 'cifar10', 'cifar100']);
   const [selectedDataset, setSelectedDataset] = useState('mnist');
   const [aggregationAlgorithms, setAggregationAlgorithms] = useState([
     { value: 'fedavg', label: 'FedAvg' },
@@ -205,8 +205,21 @@ const ModelTraining = () => {
       }
     };
 
+    const loadDatasets = async () => {
+      try {
+        const response = await fetch('http://localhost:5000/api/data/datasets');
+        const data = await response.json();
+        if (response.ok && data.datasets) {
+          setDatasets(data.datasets);
+        }
+      } catch (error) {
+        console.error('获取数据集列表失败', error);
+      }
+    };
+
     checkInitialStatus();
     loadAggregationAlgorithms();
+    loadDatasets();
 
     return () => {
       if (intervalRef.current) {

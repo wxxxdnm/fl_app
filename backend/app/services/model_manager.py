@@ -35,7 +35,7 @@ class CIFAR10Net(nn.Module):
         self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
         self.conv3 = nn.Conv2d(64, 128, kernel_size=3, padding=1)
         self.pool = nn.MaxPool2d(2, 2)
-        self.fc1 = nn.Linear(128 * 4 * 4, 256)
+        self.fc1 = nn.Linear(128 * 8 * 8, 256)
         self.fc2 = nn.Linear(256, num_classes)
         self.dropout = nn.Dropout(0.5)
         self.bn1 = nn.BatchNorm2d(32)
@@ -46,18 +46,24 @@ class CIFAR10Net(nn.Module):
         x = self.pool(F.relu(self.bn1(self.conv1(x))))
         x = self.pool(F.relu(self.bn2(self.conv2(x))))
         x = F.relu(self.bn3(self.conv3(x)))
-        x = x.view(-1, 128 * 4 * 4)
+        x = x.view(-1, 128 * 8 * 8)
         x = F.relu(self.fc1(x))
         x = self.dropout(x)
         x = self.fc2(x)
         return x
+
+class CIFAR100Net(CIFAR10Net):
+    """适用于CIFAR100的CNN模型"""
+    def __init__(self, num_classes=100):
+        super(CIFAR100Net, self).__init__(num_classes=num_classes)
 
 class ModelManager:
     """模型管理器，负责模型的创建、配置和管理"""
     def __init__(self):
         self.available_models = {
             'mnist': MNISTNet,
-            'cifar10': CIFAR10Net
+            'cifar10': CIFAR10Net,
+            'cifar100': CIFAR100Net
         }
         self.model_configs = {
             'mnist': {
@@ -69,6 +75,11 @@ class ModelManager:
                 'input_shape': (3, 32, 32),
                 'num_classes': 10,
                 'model_class': CIFAR10Net
+            },
+            'cifar100': {
+                'input_shape': (3, 32, 32),
+                'num_classes': 100,
+                'model_class': CIFAR100Net
             }
         }
 
@@ -78,7 +89,7 @@ class ModelManager:
             raise ValueError(f"Unsupported dataset: {dataset_name}")
 
         config = self.model_configs[dataset_name]
-        model = config['model_class']()
+        model = config['model_class'](num_classes=config['num_classes'])
 
         logger.info(f"Created model for {dataset_name}: {model.__class__.__name__}")
         return model
@@ -123,7 +134,8 @@ class ModelManager:
         # 根据模型类名创建模型实例
         model_mapping = {
             'MNISTNet': MNISTNet,
-            'CIFAR10Net': CIFAR10Net
+            'CIFAR10Net': CIFAR10Net,
+            'CIFAR100Net': CIFAR100Net
         }
 
         if model_class_name not in model_mapping:

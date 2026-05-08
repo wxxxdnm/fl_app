@@ -229,6 +229,7 @@ const Visualization = () => {
         >
           <Select.Option value="mnist">MNIST</Select.Option>
           <Select.Option value="cifar10">CIFAR10</Select.Option>
+          <Select.Option value="cifar100">CIFAR100</Select.Option>
         </Select>
         <Button onClick={loadVisualizationData}>刷新数据</Button>
       </Space>
