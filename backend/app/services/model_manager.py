@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from typing import Dict, List
+from .custom_dataset_manager import custom_dataset_manager
 import logging
 import os
 
@@ -233,10 +234,10 @@ class ModelManager:
 
     def create_model(self, dataset_name: str, model_name: str = None) -> nn.Module:
         """创建模型实例"""
-        if dataset_name not in self.model_configs:
+        if dataset_name not in self.model_configs and not custom_dataset_manager.is_custom_dataset(dataset_name):
             raise ValueError(f"Unsupported dataset: {dataset_name}")
 
-        config = self.model_configs[dataset_name]
+        config = self._get_model_config(dataset_name)
         selected_model = model_name or config['default_model']
         if selected_model not in config['models']:
             supported = ', '.join(config['models'].keys())
@@ -257,10 +258,10 @@ class ModelManager:
 
     def get_model_config(self, dataset_name: str) -> Dict:
         """获取模型配置信息"""
-        if dataset_name not in self.model_configs:
+        if dataset_name not in self.model_configs and not custom_dataset_manager.is_custom_dataset(dataset_name):
             raise ValueError(f"Unsupported dataset: {dataset_name}")
 
-        config = self.model_configs[dataset_name]
+        config = self._get_model_config(dataset_name)
         return {
             'input_shape': config['input_shape'],
             'num_classes': config['num_classes'],
@@ -273,18 +274,32 @@ class ModelManager:
         if dataset_name is None:
             return {
                 name: self.get_available_models(name)
-                for name in self.model_configs.keys()
+                for name in list(self.model_configs.keys()) + custom_dataset_manager.get_dataset_names()
             }
-        if dataset_name not in self.model_configs:
+        if dataset_name not in self.model_configs and not custom_dataset_manager.is_custom_dataset(dataset_name):
             raise ValueError(f"Unsupported dataset: {dataset_name}")
+        config = self._get_model_config(dataset_name)
         return [
             {
                 'value': model_name,
                 'label': model_spec['label'],
                 'model_class': model_spec['model_class'].__name__
             }
-            for model_name, model_spec in self.model_configs[dataset_name]['models'].items()
+            for model_name, model_spec in config['models'].items()
         ]
+
+    def _get_model_config(self, dataset_name: str) -> Dict:
+        if dataset_name in self.model_configs:
+            return self.model_configs[dataset_name]
+        custom_info = custom_dataset_manager.get_dataset_info(dataset_name)
+        return {
+            'input_shape': tuple(custom_info['input_shape']),
+            'num_classes': custom_info['num_classes'],
+            'default_model': 'mlp',
+            'models': {
+                'mlp': {'label': 'MLP', 'model_class': MLPNet}
+            }
+        }
 
     def save_model(self, model: nn.Module, path: str, metadata: Dict = None):
         """保存模型及其元数据"""

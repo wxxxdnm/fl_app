@@ -67,7 +67,7 @@ def get_dashboard_stats():
                     if 'global_metrics' in h
                 ]
 
-        num_datasets = len(data_routes.AVAILABLE_DATASETS)
+        num_datasets = len(data_routes.get_all_dataset_names())
         training_runs = history_service.get_training_runs(10)
         saved_models = history_service.get_model_records(10)
         recent_activities = activity_service.get_activities()

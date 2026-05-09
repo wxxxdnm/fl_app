@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Card, Button, Select, Input, Table, Tag, message, Divider, Space, Progress, Tabs, Row, Col, Statistic, Form, InputNumber, Switch } from 'antd';
-import { PlayCircleOutlined, PauseCircleOutlined, StopOutlined, SaveOutlined, LineChartOutlined, DashboardOutlined, SettingOutlined } from '@ant-design/icons';
+import { Card, Button, Select, Input, Table, Tag, message, Divider, Space, Progress, Tabs, Row, Col, Statistic, Form, InputNumber, Switch, Popconfirm } from 'antd';
+import { PlayCircleOutlined, PauseCircleOutlined, StopOutlined, SaveOutlined, LineChartOutlined, DashboardOutlined, SettingOutlined, DeleteOutlined } from '@ant-design/icons';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { useLocation } from 'react-router-dom';
 import styled from 'styled-components';
@@ -378,6 +378,23 @@ const ModelTraining = () => {
     }
   };
 
+  const deleteTrainingRun = async (runId) => {
+    try {
+      const response = await fetch(`http://localhost:5000/api/train/history/${encodeURIComponent(runId)}`, {
+        method: 'DELETE'
+      });
+      const data = await response.json();
+      if (response.ok) {
+        message.success('历史训练记录已删除');
+        loadHistory();
+      } else {
+        message.error(`删除失败: ${data.error}`);
+      }
+    } catch (error) {
+      message.error('删除历史训练记录失败');
+    }
+  };
+
   const chartData = trainingHistory.map(h => ({
     round: h.round,
     accuracy: h.global_metrics?.accuracy || 0,
@@ -693,7 +710,21 @@ const ModelTraining = () => {
                     { title: '算法', dataIndex: 'aggregation_algorithm', key: 'aggregation_algorithm' },
                     { title: '轮次', dataIndex: 'rounds', key: 'rounds' },
                     { title: '准确率', dataIndex: 'final_accuracy', key: 'final_accuracy', render: value => `${((value || 0) * 100).toFixed(2)}%` },
-                    { title: '状态', dataIndex: 'status', key: 'status', render: value => <Tag color={value === 'Completed' ? 'green' : value === 'Error' ? 'red' : 'blue'}>{value}</Tag> }
+                    { title: '状态', dataIndex: 'status', key: 'status', render: value => <Tag color={value === 'Completed' ? 'green' : value === 'Error' ? 'red' : 'blue'}>{value}</Tag> },
+                    {
+                      title: '操作',
+                      key: 'action',
+                      render: (_, record) => (
+                        <Popconfirm
+                          title="确认删除这条历史训练记录？"
+                          okText="删除"
+                          cancelText="取消"
+                          onConfirm={() => deleteTrainingRun(record.id)}
+                        >
+                          <Button danger size="small" icon={<DeleteOutlined />}>删除</Button>
+                        </Popconfirm>
+                      )
+                    }
                   ]}
                   dataSource={trainingRuns}
                   rowKey="id"

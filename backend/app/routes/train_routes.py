@@ -253,6 +253,18 @@ def get_training_status():
         logger.error(f"Error getting training status: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
+@train_bp.route('/history/<run_id>', methods=['DELETE'])
+def delete_training_history(run_id):
+    try:
+        deleted = history_service.delete_training_run(run_id)
+        if not deleted:
+            return jsonify({'error': 'Training history record not found'}), 404
+        activity_service.add_activity("已删除一条历史训练记录", "info")
+        return jsonify({'message': 'Training history record deleted'}), 200
+    except Exception as e:
+        logger.error(f"Error deleting training history: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
 @train_bp.route('/stop', methods=['POST'])
 def stop_training():
     """停止训练"""

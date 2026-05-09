@@ -1,21 +1,113 @@
 from flask import Blueprint, jsonify, request
 from ..services.data_manager import DataManager
 from ..services.activity_service import activity_service
+from ..services.custom_dataset_manager import custom_dataset_manager
 from .utils import get_json_body
+from werkzeug.utils import secure_filename
+import datetime
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 data_bp = Blueprint('data', __name__)
 data_manager = DataManager()
 AVAILABLE_DATASETS = ['mnist', 'cifar10', 'cifar100']
+UPLOAD_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'uploads'))
+ALLOWED_UPLOAD_EXTENSIONS = {'csv', 'json', 'jsonl', 'npz', 'npy', 'zip', 'tar', 'gz', 'pt', 'pth', 'pkl'}
+
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+def _is_allowed_upload(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_UPLOAD_EXTENSIONS
+
+def _uploaded_file_record(filename):
+    path = os.path.join(UPLOAD_DIR, filename)
+    stat = os.stat(path)
+    record = {
+        'filename': filename,
+        'size_bytes': stat.st_size,
+        'modified_time': datetime.datetime.fromtimestamp(stat.st_mtime).isoformat(),
+        'path': path
+    }
+    custom_dataset = custom_dataset_manager.get_by_filename(filename)
+    if custom_dataset:
+        record['custom_dataset'] = custom_dataset
+    return record
+
+def get_all_dataset_names():
+    return AVAILABLE_DATASETS + custom_dataset_manager.get_dataset_names()
 
 @data_bp.route('/datasets', methods=['GET'])
 def get_available_datasets():
     """获取可用的数据集列表"""
     try:
-        return jsonify({'datasets': AVAILABLE_DATASETS}), 200
+        return jsonify({'datasets': get_all_dataset_names()}), 200
     except Exception as e:
         logger.error(f"Error getting datasets: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@data_bp.route('/uploads', methods=['GET'])
+def list_uploaded_datasets():
+    try:
+        files = [
+            _uploaded_file_record(filename)
+            for filename in os.listdir(UPLOAD_DIR)
+            if os.path.isfile(os.path.join(UPLOAD_DIR, filename)) and filename != 'custom_datasets.json'
+        ]
+        files.sort(key=lambda item: item['modified_time'], reverse=True)
+        return jsonify({'files': files}), 200
+    except Exception as e:
+        logger.error(f"Error listing uploaded datasets: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@data_bp.route('/uploads', methods=['POST'])
+def upload_dataset_file():
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'file is required'}), 400
+
+        uploaded_file = request.files['file']
+        if not uploaded_file.filename:
+            return jsonify({'error': 'filename is required'}), 400
+
+        filename = secure_filename(uploaded_file.filename)
+        if not filename:
+            return jsonify({'error': 'filename is invalid'}), 400
+        if not _is_allowed_upload(filename):
+            supported = ', '.join(sorted(ALLOWED_UPLOAD_EXTENSIONS))
+            return jsonify({'error': f'Unsupported file type. Supported: {supported}'}), 400
+
+        timestamp = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
+        saved_filename = f'{timestamp}_{filename}'
+        save_path = os.path.join(UPLOAD_DIR, saved_filename)
+        uploaded_file.save(save_path)
+        custom_dataset = custom_dataset_manager.register_file(save_path)
+
+        activity_service.add_activity(f"数据集文件 {filename} 上传完成", "success")
+        file_record = _uploaded_file_record(saved_filename)
+        if custom_dataset:
+            file_record['custom_dataset'] = custom_dataset
+        return jsonify({
+            'message': 'Dataset file uploaded successfully',
+            'file': file_record
+        }), 201
+    except Exception as e:
+        logger.error(f"Error uploading dataset file: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@data_bp.route('/uploads/<filename>', methods=['DELETE'])
+def delete_uploaded_dataset(filename):
+    try:
+        safe_filename = secure_filename(filename)
+        path = os.path.abspath(os.path.join(UPLOAD_DIR, safe_filename))
+        if not path.startswith(UPLOAD_DIR) or not os.path.exists(path):
+            return jsonify({'error': 'Uploaded dataset file not found'}), 404
+        custom_dataset_manager.unregister_file(safe_filename)
+        os.remove(path)
+        activity_service.add_activity(f"已删除上传数据集文件 {safe_filename}", "info")
+        return jsonify({'message': 'Uploaded dataset file deleted'}), 200
+    except Exception as e:
+        logger.error(f"Error deleting uploaded dataset file: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @data_bp.route('/datasets/<dataset_name>/info', methods=['GET'])
@@ -49,6 +141,13 @@ def load_dataset(dataset_name):
             loader = data_manager.load_cifar10(train=train, batch_size=batch_size)
         elif dataset_name == 'cifar100':
             loader = data_manager.load_cifar100(train=train, batch_size=batch_size)
+        elif custom_dataset_manager.is_custom_dataset(dataset_name):
+            dataset = custom_dataset_manager.load_dataset(dataset_name)
+            loader = data_manager.dataloaders[f"{dataset_name}_{'train' if train else 'test'}"] = __import__('torch').utils.data.DataLoader(
+                dataset,
+                batch_size=batch_size,
+                shuffle=train
+            )
         else:
             return jsonify({'error': 'Unsupported dataset'}), 400
 

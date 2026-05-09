@@ -1,6 +1,7 @@
 import torch
 from torch.utils.data import DataLoader, Subset, random_split
 from torchvision import datasets, transforms
+from .custom_dataset_manager import custom_dataset_manager
 import os
 from typing import Tuple, Dict
 import logging
@@ -164,6 +165,8 @@ class DataManager:
                 download=True,
                 transform=self.transforms['cifar100']
             )
+        elif custom_dataset_manager.is_custom_dataset(dataset_name):
+            full_dataset = custom_dataset_manager.load_dataset(dataset_name)
         else:
             raise ValueError(f"Unsupported dataset: {dataset_name}")
 
@@ -316,5 +319,7 @@ class DataManager:
                 'input_shape': (3, 32, 32),
                 'classes': dataset.classes
             }
+        elif custom_dataset_manager.is_custom_dataset(dataset_name):
+            return custom_dataset_manager.get_dataset_info(dataset_name)
         else:
             raise ValueError(f"Unsupported dataset: {dataset_name}")

@@ -80,6 +80,14 @@ class HistoryService:
         records = self.get_training_runs(1)
         return records[0] if records else None
 
+    def delete_training_run(self, run_id: str) -> bool:
+        records = self._read_json(self.training_history_path)
+        remaining_records = [record for record in records if record.get("id") != run_id]
+        if len(remaining_records) == len(records):
+            return False
+        self._write_json(self.training_history_path, remaining_records)
+        return True
+
     def add_model_record(self, path: str, metadata: Dict = None) -> Dict:
         records = self._read_json(self.model_history_path)
         abs_path = os.path.abspath(path)

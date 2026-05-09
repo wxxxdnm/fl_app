@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Button, Select, Table, Tag, message, Divider, Space, Input, Row, Col, Statistic, Form, InputNumber, Switch } from 'antd';
+import { Card, Button, Select, Table, Tag, message, Divider, Space, Input, Row, Col, Statistic, Form, InputNumber, Switch, Upload, Popconfirm } from 'antd';
 import { UploadOutlined, DatabaseOutlined, PlayCircleOutlined, DeleteOutlined, InfoCircleOutlined, SettingOutlined, TeamOutlined, CloudUploadOutlined, BarChartOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
@@ -25,11 +25,13 @@ const DataManagement = () => {
   });
   const [datasetInfo, setDatasetInfo] = useState(null);
   const [allDatasetInfos, setAllDatasetInfos] = useState([]);
+  const [uploadedFiles, setUploadedFiles] = useState([]);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
     loadAvailableDatasets();
+    loadUploadedDatasets();
   }, []);
 
   useEffect(() => {
@@ -61,6 +63,60 @@ const DataManagement = () => {
       setDatasetInfo(data);
     } catch (error) {
       message.error('无法获取数据集信息');
+    }
+  };
+
+  const loadUploadedDatasets = async () => {
+    try {
+      const response = await fetch('http://localhost:5000/api/data/uploads');
+      const data = await response.json();
+      if (response.ok) {
+        setUploadedFiles(data.files || []);
+      }
+    } catch (error) {
+      message.error('无法获取上传数据集列表');
+    }
+  };
+
+  const handleDatasetUpload = async ({ file, onSuccess, onError }) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      const response = await fetch('http://localhost:5000/api/data/uploads', {
+        method: 'POST',
+        body: formData
+      });
+      const data = await response.json();
+      if (response.ok) {
+        message.success(`${file.name} 上传成功`);
+        loadAvailableDatasets();
+        loadUploadedDatasets();
+        onSuccess(data, file);
+      } else {
+        message.error(`上传失败: ${data.error}`);
+        onError(new Error(data.error));
+      }
+    } catch (error) {
+      message.error('上传失败，请检查后端连接');
+      onError(error);
+    }
+  };
+
+  const deleteUploadedDataset = async (filename) => {
+    try {
+      const response = await fetch(`http://localhost:5000/api/data/uploads/${encodeURIComponent(filename)}`, {
+        method: 'DELETE'
+      });
+      const data = await response.json();
+      if (response.ok) {
+        message.success('上传数据集文件已删除');
+        loadAvailableDatasets();
+        loadUploadedDatasets();
+      } else {
+        message.error(`删除失败: ${data.error}`);
+      }
+    } catch (error) {
+      message.error('删除上传数据集文件失败');
     }
   };
 
@@ -156,6 +212,64 @@ const DataManagement = () => {
     }
   ];
 
+  const uploadedColumns = [
+    {
+      title: '文件名',
+      dataIndex: 'filename',
+      key: 'filename'
+    },
+    {
+      title: '大小',
+      dataIndex: 'size_bytes',
+      key: 'size_bytes',
+      render: value => `${((value || 0) / 1024).toFixed(2)} KB`
+    },
+    {
+      title: '上传时间',
+      dataIndex: 'modified_time',
+      key: 'modified_time',
+      render: value => value ? new Date(value).toLocaleString() : '-'
+    },
+    {
+      title: '状态',
+      key: 'status',
+      render: (_, record) => record.custom_dataset?.trainable
+        ? <Tag color="green">可训练</Tag>
+        : <Tag color="orange">{record.custom_dataset?.parse_error || '仅存储'}</Tag>
+    },
+    {
+      title: '数据集ID',
+      key: 'dataset_id',
+      render: (_, record) => record.custom_dataset?.trainable ? record.custom_dataset.id : '-'
+    },
+    {
+      title: '操作',
+      key: 'action',
+      render: (_, record) => (
+        <Space>
+          {record.custom_dataset?.trainable && (
+            <Button
+              type="primary"
+              size="small"
+              icon={<PlayCircleOutlined />}
+              onClick={() => startTrainingWithDataset(record.custom_dataset.id)}
+            >
+              训练
+            </Button>
+          )}
+          <Popconfirm
+            title="确认删除这个上传文件？"
+            okText="删除"
+            cancelText="取消"
+            onConfirm={() => deleteUploadedDataset(record.filename)}
+          >
+            <Button danger icon={<DeleteOutlined />} size="small">删除</Button>
+          </Popconfirm>
+        </Space>
+      )
+    }
+  ];
+
   const startTrainingWithDataset = (datasetName) => {
     navigate('/train', { state: { selectedDataset: datasetName } });
   };
@@ -181,7 +295,13 @@ const DataManagement = () => {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
             <h1 style={{ margin: 0 }}>数据管理</h1>
             <Space>
-              <Button icon={<CloudUploadOutlined />}>导入数据集</Button>
+              <Upload
+                accept=".csv,.json,.jsonl,.npz,.npy,.zip,.tar,.gz,.pt,.pth,.pkl"
+                showUploadList={false}
+                customRequest={handleDatasetUpload}
+              >
+                <Button icon={<CloudUploadOutlined />}>导入数据集</Button>
+              </Upload>
               <Button type="primary" icon={<PlayCircleOutlined />} onClick={() => navigate('/train')}>
                 跳转至训练
               </Button>
@@ -309,6 +429,23 @@ const DataManagement = () => {
               dataSource={datasetData}
               pagination={false}
               rowKey="name"
+              size="small"
+            />
+          </DatasetCard>
+
+          <DatasetCard title="上传数据集文件">
+            <Upload
+              accept=".csv,.json,.jsonl,.npz,.npy,.zip,.tar,.gz,.pt,.pth,.pkl"
+              showUploadList={false}
+              customRequest={handleDatasetUpload}
+            >
+              <Button icon={<UploadOutlined />} style={{ marginBottom: 16 }}>选择文件上传</Button>
+            </Upload>
+            <Table
+              columns={uploadedColumns}
+              dataSource={uploadedFiles}
+              pagination={{ pageSize: 5 }}
+              rowKey="filename"
               size="small"
             />
           </DatasetCard>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Row, Col, Statistic, List, Timeline, Button, Space, Spin, message, Tag } from 'antd';
+import { Card, Row, Col, Statistic, List, Timeline, Button, Space, Spin, message, Tag, Popconfirm } from 'antd';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { DatabaseOutlined, TeamOutlined, LineChartOutlined, PlayCircleOutlined, SettingOutlined, LaptopOutlined, DashboardOutlined, AppstoreOutlined, RightOutlined, SyncOutlined } from '@ant-design/icons';
+import { DatabaseOutlined, TeamOutlined, LineChartOutlined, PlayCircleOutlined, SettingOutlined, LaptopOutlined, DashboardOutlined, AppstoreOutlined, RightOutlined, SyncOutlined, DeleteOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 
@@ -55,6 +55,23 @@ const Home = () => {
   useEffect(() => {
     fetchDashboardStats();
   }, []);
+
+  const deleteTrainingRun = async (runId) => {
+    try {
+      const response = await fetch(`http://localhost:5000/api/train/history/${encodeURIComponent(runId)}`, {
+        method: 'DELETE'
+      });
+      const data = await response.json();
+      if (response.ok) {
+        message.success('历史训练记录已删除');
+        fetchDashboardStats();
+      } else {
+        message.error(`删除失败: ${data.error}`);
+      }
+    } catch (error) {
+      message.error('删除历史训练记录失败');
+    }
+  };
 
   const quickActions = [
     {
@@ -211,6 +228,14 @@ const Home = () => {
                     description={`${new Date(run.timestamp).toLocaleString()} · ${run.rounds || 0} 轮 · ${run.num_clients || 0} 客户端 · 准确率 ${((run.final_accuracy || 0) * 100).toFixed(2)}%`}
                   />
                   <Tag color={run.status === 'Completed' ? 'green' : run.status === 'Error' ? 'red' : 'blue'}>{run.status}</Tag>
+                  <Popconfirm
+                    title="确认删除这条历史训练记录？"
+                    okText="删除"
+                    cancelText="取消"
+                    onConfirm={() => deleteTrainingRun(run.id)}
+                  >
+                    <Button danger size="small" icon={<DeleteOutlined />}>删除</Button>
+                  </Popconfirm>
                 </List.Item>
               )}
             />

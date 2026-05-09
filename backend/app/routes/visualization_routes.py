@@ -237,10 +237,6 @@ def get_confusion_matrix():
             return error_response
         dataset_name = data.get('dataset_name', 'mnist')
 
-        # 模拟混淆矩阵数据
-        if dataset_name not in ('mnist', 'cifar10', 'cifar100'):
-            return jsonify({'error': 'Unsupported dataset'}), 400
-
         class_names = get_dataset_class_names(dataset_name)
         num_classes = len(class_names)
 
