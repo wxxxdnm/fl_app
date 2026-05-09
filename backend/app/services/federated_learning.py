@@ -11,6 +11,50 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+def calculate_classification_metrics(confusion_matrix: torch.Tensor) -> Dict:
+    matrix = confusion_matrix.cpu().numpy().astype(float)
+    true_positive = np.diag(matrix)
+    predicted_total = matrix.sum(axis=0)
+    actual_total = matrix.sum(axis=1)
+    total = matrix.sum()
+
+    precision_per_class = np.divide(
+        true_positive,
+        predicted_total,
+        out=np.zeros_like(true_positive),
+        where=predicted_total > 0
+    )
+    recall_per_class = np.divide(
+        true_positive,
+        actual_total,
+        out=np.zeros_like(true_positive),
+        where=actual_total > 0
+    )
+    f1_per_class = np.divide(
+        2 * precision_per_class * recall_per_class,
+        precision_per_class + recall_per_class,
+        out=np.zeros_like(true_positive),
+        where=(precision_per_class + recall_per_class) > 0
+    )
+
+    return {
+        'accuracy': float(true_positive.sum() / total) if total > 0 else 0.0,
+        'precision': float(np.mean(precision_per_class)) if len(precision_per_class) > 0 else 0.0,
+        'recall': float(np.mean(recall_per_class)) if len(recall_per_class) > 0 else 0.0,
+        'f1_score': float(np.mean(f1_per_class)) if len(f1_per_class) > 0 else 0.0,
+        'balanced_accuracy': float(np.mean(recall_per_class)) if len(recall_per_class) > 0 else 0.0,
+        'per_class_precision': precision_per_class.tolist(),
+        'per_class_recall': recall_per_class.tolist(),
+        'per_class_f1': f1_per_class.tolist()
+    }
+
+def update_confusion_matrix(confusion_matrix: torch.Tensor, target: torch.Tensor, predicted: torch.Tensor, num_classes: int) -> torch.Tensor:
+    if confusion_matrix is None:
+        confusion_matrix = torch.zeros((num_classes, num_classes), dtype=torch.long)
+    indices = target.detach().cpu() * num_classes + predicted.detach().cpu()
+    batch_matrix = torch.bincount(indices, minlength=num_classes * num_classes).reshape(num_classes, num_classes)
+    return confusion_matrix + batch_matrix
+
 class FLClient:
     def __init__(self, client_id: int, model: nn.Module, train_loader: DataLoader, test_loader: DataLoader, device: str):
         self.client_id = client_id
@@ -37,6 +81,8 @@ class FLClient:
         total_loss = 0
         correct = 0
         total = 0
+        num_classes = getattr(self.model, 'num_classes', None)
+        confusion_matrix = None
 
         for epoch in range(self.local_epochs):
             for batch_idx, (data, target) in enumerate(self.train_loader):
@@ -56,6 +102,9 @@ class FLClient:
                 _, predicted = output.max(1)
                 total += target.size(0)
                 correct += predicted.eq(target).sum().item()
+                if num_classes is None:
+                    num_classes = output.size(1)
+                confusion_matrix = update_confusion_matrix(confusion_matrix, target, predicted, num_classes)
 
         metrics = {
             'loss': total_loss / max(1, len(self.train_loader)),
@@ -64,6 +113,10 @@ class FLClient:
         }
 
         training_time = time.time() - start_time
+        if confusion_matrix is not None:
+            metrics.update(calculate_classification_metrics(confusion_matrix))
+        metrics['training_time'] = training_time
+        metrics['samples_per_second'] = total / training_time if training_time > 0 else 0.0
         self.total_training_time += training_time
         self.participation_count += 1
         self.last_activity = time.time()
@@ -74,9 +127,12 @@ class FLClient:
     def evaluate(self) -> Dict:
         """评估客户端模型"""
         self.model.eval()
+        start_time = time.time()
         total_loss = 0
         correct = 0
         total = 0
+        num_classes = getattr(self.model, 'num_classes', None)
+        confusion_matrix = None
 
         with torch.no_grad():
             for data, target in self.test_loader:
@@ -88,12 +144,20 @@ class FLClient:
                 _, predicted = output.max(1)
                 total += target.size(0)
                 correct += predicted.eq(target).sum().item()
+                if num_classes is None:
+                    num_classes = output.size(1)
+                confusion_matrix = update_confusion_matrix(confusion_matrix, target, predicted, num_classes)
 
         metrics = {
             'loss': total_loss / max(1, len(self.test_loader)),
             'accuracy': correct / max(1, total),
             'num_samples': total
         }
+        evaluation_time = time.time() - start_time
+        if confusion_matrix is not None:
+            metrics.update(calculate_classification_metrics(confusion_matrix))
+        metrics['evaluation_time'] = evaluation_time
+        metrics['samples_per_second'] = total / evaluation_time if evaluation_time > 0 else 0.0
 
         return metrics
 
@@ -265,9 +329,12 @@ class FederatedLearning:
     def evaluate_global_model(self, clients: List[FLClient]) -> Dict:
         """评估全局模型在所有客户端上的性能"""
         self.global_model.eval()
+        start_time = time.time()
         total_loss = 0
         total_correct = 0
         total_samples = 0
+        num_classes = getattr(self.global_model, 'num_classes', None)
+        confusion_matrix = None
 
         with torch.no_grad():
             for client in clients:
@@ -280,16 +347,26 @@ class FederatedLearning:
                     _, predicted = output.max(1)
                     total_correct += predicted.eq(target).sum().item()
                     total_samples += target.size(0)
+                    if num_classes is None:
+                        num_classes = output.size(1)
+                    confusion_matrix = update_confusion_matrix(confusion_matrix, target, predicted, num_classes)
 
         total_batches = sum(len(client.test_loader) for client in clients)
         if total_batches <= 0 or total_samples <= 0:
             raise ValueError("Cannot evaluate global model without test samples")
 
-        return {
+        metrics = {
             'loss': total_loss / total_batches,
             'accuracy': total_correct / total_samples,
             'num_samples': total_samples
         }
+        evaluation_time = time.time() - start_time
+        if confusion_matrix is not None:
+            metrics.update(calculate_classification_metrics(confusion_matrix))
+        metrics['evaluation_time'] = evaluation_time
+        metrics['samples_per_second'] = total_samples / evaluation_time if evaluation_time > 0 else 0.0
+        self.global_metrics = metrics
+        return metrics
 
     def get_training_history(self) -> List[Dict]:
         """获取训练历史记录"""

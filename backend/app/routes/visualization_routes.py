@@ -105,6 +105,10 @@ def get_training_curves():
         rounds = [h['round'] for h in history]
         global_accuracies = [h['global_metrics']['accuracy'] for h in history]
         global_losses = [h['global_metrics']['loss'] for h in history]
+        global_precisions = [h['global_metrics'].get('precision', 0) for h in history]
+        global_recalls = [h['global_metrics'].get('recall', 0) for h in history]
+        global_f1_scores = [h['global_metrics'].get('f1_score', 0) for h in history]
+        global_balanced_accuracies = [h['global_metrics'].get('balanced_accuracy', 0) for h in history]
 
         # 客户端数据
         client_accuracies = []
@@ -119,6 +123,10 @@ def get_training_curves():
             'rounds': rounds,
             'global_accuracies': global_accuracies,
             'global_losses': global_losses,
+            'global_precisions': global_precisions,
+            'global_recalls': global_recalls,
+            'global_f1_scores': global_f1_scores,
+            'global_balanced_accuracies': global_balanced_accuracies,
             'client_accuracies': client_accuracies,
             'client_losses': client_losses
         }), 200
@@ -142,6 +150,11 @@ def get_model_performance():
                 'client_id': client.client_id,
                 'accuracy': metrics['accuracy'],
                 'loss': metrics['loss'],
+                'precision': metrics.get('precision', 0),
+                'recall': metrics.get('recall', 0),
+                'f1_score': metrics.get('f1_score', 0),
+                'balanced_accuracy': metrics.get('balanced_accuracy', 0),
+                'samples_per_second': metrics.get('samples_per_second', 0),
                 'num_samples': metrics['num_samples']
             })
 
@@ -151,12 +164,21 @@ def get_model_performance():
             'client_ids': df['client_id'].tolist(),
             'accuracies': df['accuracy'].tolist(),
             'losses': df['loss'].tolist(),
+            'precisions': df['precision'].tolist(),
+            'recalls': df['recall'].tolist(),
+            'f1_scores': df['f1_score'].tolist(),
+            'balanced_accuracies': df['balanced_accuracy'].tolist(),
+            'samples_per_second': df['samples_per_second'].tolist(),
             'sample_sizes': df['num_samples'].tolist(),
             'stats': {
                 'mean_accuracy': float(df['accuracy'].mean()),
                 'std_accuracy': float(df['accuracy'].std()),
                 'mean_loss': float(df['loss'].mean()),
-                'std_loss': float(df['loss'].std())
+                'std_loss': float(df['loss'].std()),
+                'mean_precision': float(df['precision'].mean()),
+                'mean_recall': float(df['recall'].mean()),
+                'mean_f1_score': float(df['f1_score'].mean()),
+                'mean_balanced_accuracy': float(df['balanced_accuracy'].mean())
             }
         }
 

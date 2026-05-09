@@ -97,6 +97,9 @@ const enrichAggregationAlgorithm = (algorithm) => {
   };
 };
 
+const formatPercent = (value) => typeof value === 'number' ? (value * 100).toFixed(2) + '%' : '-';
+const formatNumber = (value, digits = 4) => typeof value === 'number' ? value.toFixed(digits) : '-';
+
 const ModelTraining = () => {
   const location = useLocation();
   const [datasets, setDatasets] = useState(['mnist', 'cifar10', 'cifar100']);
@@ -264,8 +267,13 @@ const ModelTraining = () => {
     const formattedMetrics = history.map((h, index) => ({
       key: index,
       round: h.round,
-      accuracy: h.global_metrics?.accuracy ? (h.global_metrics.accuracy * 100).toFixed(2) + '%' : '-',
-      loss: h.global_metrics?.loss ? h.global_metrics.loss.toFixed(4) : '-',
+      accuracy: formatPercent(h.global_metrics?.accuracy),
+      precision: formatPercent(h.global_metrics?.precision),
+      recall: formatPercent(h.global_metrics?.recall),
+      f1_score: formatPercent(h.global_metrics?.f1_score),
+      balanced_accuracy: formatPercent(h.global_metrics?.balanced_accuracy),
+      loss: formatNumber(h.global_metrics?.loss),
+      samples_per_second: formatNumber(h.global_metrics?.samples_per_second, 2),
       num_samples: h.global_metrics?.num_samples || '-'
     }));
     setPerformanceMetrics(formattedMetrics);
@@ -353,7 +361,12 @@ const ModelTraining = () => {
   const chartData = trainingHistory.map(h => ({
     round: h.round,
     accuracy: h.global_metrics?.accuracy || 0,
-    loss: h.global_metrics?.loss || 0
+    precision: h.global_metrics?.precision || 0,
+    recall: h.global_metrics?.recall || 0,
+    f1_score: h.global_metrics?.f1_score || 0,
+    balanced_accuracy: h.global_metrics?.balanced_accuracy || 0,
+    loss: h.global_metrics?.loss || 0,
+    samples_per_second: h.global_metrics?.samples_per_second || 0
   }));
 
   const selectedAggregationAlgorithm = aggregationAlgorithms.find(
@@ -532,10 +545,11 @@ const ModelTraining = () => {
                   </Tag>
                 </div>
                 <div>当前轮次：<strong>{currentRound}</strong> / {trainingConfig.num_rounds}</div>
-                {metrics.accuracy && (
+                {typeof metrics.accuracy === 'number' && (
                   <div style={{ marginTop: 8 }}>
                     <Statistic title="准确率" value={metrics.accuracy * 100} precision={2} suffix="%" valueStyle={{ color: '#3f8600' }} />
                     <Statistic title="损失" value={metrics.loss} precision={4} valueStyle={{ color: '#cf1322' }} />
+                    <Statistic title="F1 Score" value={(metrics.f1_score || 0) * 100} precision={2} suffix="%" valueStyle={{ color: '#1677ff' }} />
                   </div>
                 )}
               </TrainingCard>
@@ -577,6 +591,39 @@ const ModelTraining = () => {
               </TrainingCard>
             </Col>
           </Row>
+          <Row gutter={16}>
+            <Col span={12}>
+              <TrainingCard title="分类指标曲线">
+                <ResponsiveContainer width="100%" height={300}>
+                  <LineChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="round" />
+                    <YAxis domain={[0, 1]} />
+                    <Tooltip />
+                    <Legend />
+                    <Line type="monotone" dataKey="precision" stroke="#1677ff" strokeWidth={2} name="Precision" />
+                    <Line type="monotone" dataKey="recall" stroke="#722ed1" strokeWidth={2} name="Recall" />
+                    <Line type="monotone" dataKey="f1_score" stroke="#fa8c16" strokeWidth={2} name="F1 Score" />
+                    <Line type="monotone" dataKey="balanced_accuracy" stroke="#13c2c2" strokeWidth={2} name="Balanced Accuracy" />
+                  </LineChart>
+                </ResponsiveContainer>
+              </TrainingCard>
+            </Col>
+            <Col span={12}>
+              <TrainingCard title="吞吐量曲线">
+                <ResponsiveContainer width="100%" height={300}>
+                  <LineChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="round" />
+                    <YAxis />
+                    <Tooltip />
+                    <Legend />
+                    <Line type="monotone" dataKey="samples_per_second" stroke="#eb2f96" strokeWidth={2} name="Samples/s" />
+                  </LineChart>
+                </ResponsiveContainer>
+              </TrainingCard>
+            </Col>
+          </Row>
 
           <TrainingCard title="性能指标" style={{ marginTop: 16 }}>
             <Button onClick={getMetrics} style={{ marginBottom: 16 }}>刷新指标</Button>
@@ -584,11 +631,17 @@ const ModelTraining = () => {
               columns={[
                 { title: '轮次', dataIndex: 'round', key: 'round' },
                 { title: '准确率', dataIndex: 'accuracy', key: 'accuracy' },
+                { title: 'Precision', dataIndex: 'precision', key: 'precision' },
+                { title: 'Recall', dataIndex: 'recall', key: 'recall' },
+                { title: 'F1 Score', dataIndex: 'f1_score', key: 'f1_score' },
+                { title: 'Balanced Acc', dataIndex: 'balanced_accuracy', key: 'balanced_accuracy' },
                 { title: '损失', dataIndex: 'loss', key: 'loss' },
+                { title: 'Samples/s', dataIndex: 'samples_per_second', key: 'samples_per_second' },
                 { title: '样本数', dataIndex: 'num_samples', key: 'num_samples' }
               ]}
               dataSource={performanceMetrics}
               pagination={false}
+              scroll={{ x: true }}
             />
           </TrainingCard>
         </Tabs.TabPane>

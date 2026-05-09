@@ -252,20 +252,40 @@ def get_metrics():
             'rounds': [],
             'accuracies': [],
             'losses': [],
+            'precisions': [],
+            'recalls': [],
+            'f1_scores': [],
+            'balanced_accuracies': [],
+            'samples_per_second': [],
             'client_accuracies': [],
-            'client_losses': []
+            'client_losses': [],
+            'client_precisions': [],
+            'client_recalls': [],
+            'client_f1_scores': []
         }
 
         for round_data in history:
+            global_metrics = round_data['global_metrics']
             metrics_data['rounds'].append(round_data['round'])
-            metrics_data['accuracies'].append(round_data['global_metrics']['accuracy'])
-            metrics_data['losses'].append(round_data['global_metrics']['loss'])
+            metrics_data['accuracies'].append(global_metrics['accuracy'])
+            metrics_data['losses'].append(global_metrics['loss'])
+            metrics_data['precisions'].append(global_metrics.get('precision', 0))
+            metrics_data['recalls'].append(global_metrics.get('recall', 0))
+            metrics_data['f1_scores'].append(global_metrics.get('f1_score', 0))
+            metrics_data['balanced_accuracies'].append(global_metrics.get('balanced_accuracy', 0))
+            metrics_data['samples_per_second'].append(global_metrics.get('samples_per_second', 0))
 
             # 客户端指标
             client_accs = [m['accuracy'] for m in round_data['client_metrics']]
             client_losses = [m['loss'] for m in round_data['client_metrics']]
+            client_precisions = [m.get('precision', 0) for m in round_data['client_metrics']]
+            client_recalls = [m.get('recall', 0) for m in round_data['client_metrics']]
+            client_f1_scores = [m.get('f1_score', 0) for m in round_data['client_metrics']]
             metrics_data['client_accuracies'].append(client_accs)
             metrics_data['client_losses'].append(client_losses)
+            metrics_data['client_precisions'].append(client_precisions)
+            metrics_data['client_recalls'].append(client_recalls)
+            metrics_data['client_f1_scores'].append(client_f1_scores)
 
         return jsonify(metrics_data), 200
 
