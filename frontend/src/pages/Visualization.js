@@ -90,11 +90,21 @@ const Visualization = () => {
     const rounds = data.rounds || [];
     const accuracies = data.global_accuracies || [];
     const losses = data.global_losses || [];
+    const precisions = data.global_precisions || [];
+    const recalls = data.global_recalls || [];
+    const f1Scores = data.global_f1_scores || [];
+    const balancedAccuracies = data.global_balanced_accuracies || [];
+    const samplesPerSecond = data.global_samples_per_second || [];
 
     return rounds.map((round, index) => ({
       round,
       accuracy: accuracies[index] || 0,
-      loss: losses[index] || 0
+      loss: losses[index] || 0,
+      precision: precisions[index] || 0,
+      recall: recalls[index] || 0,
+      f1Score: f1Scores[index] || 0,
+      balancedAccuracy: balancedAccuracies[index] || 0,
+      samplesPerSecond: samplesPerSecond[index] || 0
     }));
   };
 
@@ -102,11 +112,21 @@ const Visualization = () => {
     const clientIds = data.client_ids || [];
     const accuracies = data.accuracies || [];
     const losses = data.losses || [];
+    const precisions = data.precisions || [];
+    const recalls = data.recalls || [];
+    const f1Scores = data.f1_scores || [];
+    const balancedAccuracies = data.balanced_accuracies || [];
+    const samplesPerSecond = data.samples_per_second || [];
 
     return clientIds.map((id, index) => ({
       clientId: `客户端 ${id}`,
       accuracy: accuracies[index] || 0,
       loss: losses[index] || 0,
+      precision: precisions[index] || 0,
+      recall: recalls[index] || 0,
+      f1Score: f1Scores[index] || 0,
+      balancedAccuracy: balancedAccuracies[index] || 0,
+      samplesPerSecond: samplesPerSecond[index] || 0,
       samples: data.sample_sizes?.[index] || 0
     }));
   };
@@ -269,6 +289,39 @@ const Visualization = () => {
               </ChartCard>
             </Col>
           </Row>
+          <Row gutter={16}>
+            <Col span={12}>
+              <ChartCard title="全局分类指标">
+                <ResponsiveContainer width="100%" height={350}>
+                  <LineChart data={chartData.trainingCurves}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="round" />
+                    <YAxis domain={[0, 1]} />
+                    <Tooltip />
+                    <Legend />
+                    <Line type="monotone" dataKey="precision" stroke="#1677ff" strokeWidth={2} name="Precision" dot={{ r: 3 }} />
+                    <Line type="monotone" dataKey="recall" stroke="#722ed1" strokeWidth={2} name="Recall" dot={{ r: 3 }} />
+                    <Line type="monotone" dataKey="f1Score" stroke="#fa8c16" strokeWidth={2} name="F1 Score" dot={{ r: 3 }} />
+                    <Line type="monotone" dataKey="balancedAccuracy" stroke="#13c2c2" strokeWidth={2} name="Balanced Accuracy" dot={{ r: 3 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </ChartCard>
+            </Col>
+            <Col span={12}>
+              <ChartCard title="全局推理吞吐量">
+                <ResponsiveContainer width="100%" height={350}>
+                  <LineChart data={chartData.trainingCurves}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="round" />
+                    <YAxis />
+                    <Tooltip />
+                    <Legend />
+                    <Line type="monotone" dataKey="samplesPerSecond" stroke="#eb2f96" strokeWidth={2} name="Samples/s" dot={{ r: 3 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </ChartCard>
+            </Col>
+          </Row>
         </Tabs.TabPane>
 
         <Tabs.TabPane
@@ -284,6 +337,35 @@ const Visualization = () => {
                 <Tooltip />
                 <Legend />
                 <Bar dataKey="accuracy" fill="#52c41a" name="准确率" />
+              </BarChart>
+            </ResponsiveContainer>
+          </ChartCard>
+
+          <ChartCard title="客户端分类指标对比">
+            <ResponsiveContainer width="100%" height={400}>
+              <BarChart data={chartData.clientPerformance}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="clientId" angle={-45} textAnchor="end" height={80} />
+                <YAxis domain={[0, 1]} />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="precision" fill="#1677ff" name="Precision" />
+                <Bar dataKey="recall" fill="#722ed1" name="Recall" />
+                <Bar dataKey="f1Score" fill="#fa8c16" name="F1 Score" />
+                <Bar dataKey="balancedAccuracy" fill="#13c2c2" name="Balanced Accuracy" />
+              </BarChart>
+            </ResponsiveContainer>
+          </ChartCard>
+
+          <ChartCard title="客户端吞吐量对比">
+            <ResponsiveContainer width="100%" height={400}>
+              <BarChart data={chartData.clientPerformance}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="clientId" angle={-45} textAnchor="end" height={80} />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="samplesPerSecond" fill="#eb2f96" name="Samples/s" />
               </BarChart>
             </ResponsiveContainer>
           </ChartCard>

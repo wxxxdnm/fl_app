@@ -109,6 +109,7 @@ def get_training_curves():
         global_recalls = [h['global_metrics'].get('recall', 0) for h in history]
         global_f1_scores = [h['global_metrics'].get('f1_score', 0) for h in history]
         global_balanced_accuracies = [h['global_metrics'].get('balanced_accuracy', 0) for h in history]
+        global_samples_per_second = [h['global_metrics'].get('samples_per_second', 0) for h in history]
 
         # 客户端数据
         client_accuracies = []
@@ -127,6 +128,7 @@ def get_training_curves():
             'global_recalls': global_recalls,
             'global_f1_scores': global_f1_scores,
             'global_balanced_accuracies': global_balanced_accuracies,
+            'global_samples_per_second': global_samples_per_second,
             'client_accuracies': client_accuracies,
             'client_losses': client_losses
         }), 200
