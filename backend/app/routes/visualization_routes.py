@@ -10,7 +10,10 @@ import pandas as pd
 import numpy as np
 import logging
 import torch
+import torch.nn as nn
+import time
 from torch.utils.data import Subset
+from ..services.federated_learning import calculate_classification_metrics, update_confusion_matrix
 
 logger = logging.getLogger(__name__)
 viz_bp = Blueprint('visualization', __name__)
@@ -46,6 +49,41 @@ def extract_labels(dataset):
             target = target.item()
         labels.append(int(target))
     return labels
+
+def evaluate_global_model_on_client(fl_system, client):
+    model = fl_system.global_model
+    model.eval()
+    start_time = time.time()
+    total_loss = 0
+    correct = 0
+    total = 0
+    num_classes = getattr(model, 'num_classes', None)
+    confusion_matrix = None
+
+    with torch.no_grad():
+        for data, target in client.test_loader:
+            data, target = data.to(fl_system.device), target.to(fl_system.device)
+            output = model(data)
+            loss = nn.CrossEntropyLoss()(output, target)
+            total_loss += loss.item()
+            _, predicted = output.max(1)
+            total += target.size(0)
+            correct += predicted.eq(target).sum().item()
+            if num_classes is None:
+                num_classes = output.size(1)
+            confusion_matrix = update_confusion_matrix(confusion_matrix, target, predicted, num_classes)
+
+    evaluation_time = time.time() - start_time
+    metrics = {
+        'loss': total_loss / max(1, len(client.test_loader)),
+        'accuracy': correct / max(1, total),
+        'num_samples': total,
+        'evaluation_time': evaluation_time,
+        'samples_per_second': total / evaluation_time if evaluation_time > 0 else 0.0
+    }
+    if confusion_matrix is not None:
+        metrics.update(calculate_classification_metrics(confusion_matrix))
+    return metrics
 
 def compute_distribution_stats(count_matrix):
     if count_matrix.size == 0 or count_matrix.sum() == 0:
@@ -147,7 +185,7 @@ def get_model_performance():
         # 评估所有客户端
         client_performance = []
         for client in train_routes.fl_system.clients:
-            metrics = client.evaluate()
+            metrics = evaluate_global_model_on_client(train_routes.fl_system, client)
             client_performance.append({
                 'client_id': client.client_id,
                 'accuracy': metrics['accuracy'],

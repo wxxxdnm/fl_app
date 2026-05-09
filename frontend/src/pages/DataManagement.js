@@ -19,7 +19,9 @@ const DataManagement = () => {
     num_clients: 10,
     batch_size: 64,
     iid: true,
-    client_fraction: 0.5
+    client_fraction: 0.5,
+    non_iid_classes_per_client: 2,
+    non_iid_seed: 42
   });
   const [datasetInfo, setDatasetInfo] = useState(null);
   const [allDatasetInfos, setAllDatasetInfos] = useState([]);
@@ -273,6 +275,20 @@ const DataManagement = () => {
                   </Form.Item>
                 </Col>
               </Row>
+              {!federatedConfig.iid && (
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Form.Item label="每客户端类别数" name="non_iid_classes_per_client">
+                      <InputNumber min={1} max={100} step={1} style={{ width: '100%' }} />
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item label="Non-IID随机种子" name="non_iid_seed">
+                      <InputNumber min={0} max={999999} step={1} style={{ width: '100%' }} />
+                    </Form.Item>
+                  </Col>
+                </Row>
+              )}
               <Divider />
               <Button
                 type="primary"

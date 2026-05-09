@@ -36,13 +36,17 @@ def calculate_classification_metrics(confusion_matrix: torch.Tensor) -> Dict:
         out=np.zeros_like(true_positive),
         where=(precision_per_class + recall_per_class) > 0
     )
+    actual_class_mask = actual_total > 0
+    supported_precision = precision_per_class[actual_class_mask]
+    supported_recall = recall_per_class[actual_class_mask]
+    supported_f1 = f1_per_class[actual_class_mask]
 
     return {
         'accuracy': float(true_positive.sum() / total) if total > 0 else 0.0,
-        'precision': float(np.mean(precision_per_class)) if len(precision_per_class) > 0 else 0.0,
-        'recall': float(np.mean(recall_per_class)) if len(recall_per_class) > 0 else 0.0,
-        'f1_score': float(np.mean(f1_per_class)) if len(f1_per_class) > 0 else 0.0,
-        'balanced_accuracy': float(np.mean(recall_per_class)) if len(recall_per_class) > 0 else 0.0,
+        'precision': float(np.mean(supported_precision)) if len(supported_precision) > 0 else 0.0,
+        'recall': float(np.mean(supported_recall)) if len(supported_recall) > 0 else 0.0,
+        'f1_score': float(np.mean(supported_f1)) if len(supported_f1) > 0 else 0.0,
+        'balanced_accuracy': float(np.mean(supported_recall)) if len(supported_recall) > 0 else 0.0,
         'per_class_precision': precision_per_class.tolist(),
         'per_class_recall': recall_per_class.tolist(),
         'per_class_f1': f1_per_class.tolist()

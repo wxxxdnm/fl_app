@@ -13,6 +13,8 @@ class DataManager:
             data_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data"))
         self.data_dir = data_dir
         os.makedirs(data_dir, exist_ok=True)
+        self.cifar100_dir = os.path.join(data_dir, "cifar100_cache")
+        os.makedirs(self.cifar100_dir, exist_ok=True)
 
         self.transforms = {
             'mnist': transforms.Compose([
@@ -106,7 +108,7 @@ class DataManager:
         """加载CIFAR100数据集"""
         if 'cifar100' not in self.datasets:
             self.datasets['cifar100'] = datasets.CIFAR100(
-                root=self.data_dir,
+                root=self.cifar100_dir,
                 train=True,
                 download=True,
                 transform=self.transforms['cifar100']
@@ -116,7 +118,7 @@ class DataManager:
             dataset = self.datasets['cifar100']
         else:
             dataset = datasets.CIFAR100(
-                root=self.data_dir,
+                root=self.cifar100_dir,
                 train=False,
                 download=True,
                 transform=transforms.Compose([
@@ -137,7 +139,9 @@ class DataManager:
         return dataloader
 
     def create_federated_datasets(self, dataset_name: str, num_clients: int,
-                                batch_size: int = 64, iid: bool = True) -> Dict[str, DataLoader]:
+                                batch_size: int = 64, iid: bool = True,
+                                non_iid_classes_per_client: int = 2,
+                                non_iid_seed: int = 42) -> Dict[str, DataLoader]:
         """创建联邦学习数据集（IID或非IID）"""
         if dataset_name == 'mnist':
             full_dataset = datasets.MNIST(
@@ -155,7 +159,7 @@ class DataManager:
             )
         elif dataset_name == 'cifar100':
             full_dataset = datasets.CIFAR100(
-                root=self.data_dir,
+                root=self.cifar100_dir,
                 train=True,
                 download=True,
                 transform=self.transforms['cifar100']
@@ -167,6 +171,8 @@ class DataManager:
             raise ValueError("num_clients must be at least 1")
         if batch_size < 1:
             raise ValueError("batch_size must be at least 1")
+        if non_iid_classes_per_client < 1:
+            raise ValueError("non_iid_classes_per_client must be at least 1")
 
         # 划分数据给各个客户端
         if iid:
@@ -179,7 +185,12 @@ class DataManager:
             subsets = random_split(full_dataset, lengths)
         else:
             # Non-IID划分：按类别划分
-            subsets = self._create_non_iid_split(full_dataset, num_clients)
+            subsets = self._create_non_iid_split(
+                full_dataset,
+                num_clients,
+                non_iid_classes_per_client,
+                non_iid_seed
+            )
 
         # 创建DataLoader
         client_dataloaders = {}
@@ -204,42 +215,76 @@ class DataManager:
         logger.info(f"Created federated dataset with {num_clients} clients")
         return client_dataloaders
 
-    def _create_non_iid_split(self, dataset, num_clients: int):
+    def _extract_labels(self, dataset):
+        if hasattr(dataset, 'targets'):
+            targets = dataset.targets
+            if torch.is_tensor(targets):
+                targets = targets.tolist()
+            return [int(target) for target in targets]
+        if hasattr(dataset, 'labels'):
+            labels = dataset.labels
+            if torch.is_tensor(labels):
+                labels = labels.tolist()
+            return [int(label) for label in labels]
+        return [int(label) for _, label in dataset]
+
+    def _create_non_iid_split(self, dataset, num_clients: int,
+                              classes_per_client: int = 2,
+                              seed: int = 42):
         """创建Non-IID数据划分"""
         # 按类别分组
         classes = {}
-        for idx, (_, label) in enumerate(dataset):
+        labels = self._extract_labels(dataset)
+        for idx, label in enumerate(labels):
             if label not in classes:
                 classes[label] = []
             classes[label].append(idx)
 
         # 为每个客户端分配特定的类别
         client_data = [[] for _ in range(num_clients)]
-        class_labels = list(classes.keys())
-        num_classes_per_client = max(1, min(2, len(class_labels)))
+        class_labels = sorted(classes.keys())
+        classes_per_client = max(1, min(classes_per_client, len(class_labels)))
+        generator = torch.Generator().manual_seed(seed)
+        total_class_slots = num_clients * classes_per_client
+        if total_class_slots < len(class_labels):
+            raise ValueError(
+                "num_clients * non_iid_classes_per_client must cover all dataset classes"
+            )
 
+        class_order = torch.randperm(len(class_labels), generator=generator).tolist()
+        shuffled_class_labels = [class_labels[i] for i in class_order]
+        class_to_clients = {label: [] for label in class_labels}
         for client_id in range(num_clients):
-            # 为每个客户端分配2个类别
-            class_start = client_id % len(class_labels)
-            assigned_classes = []
-            for i in range(num_classes_per_client):
-                assigned_classes.append((class_start + i) % len(class_labels))
+            class_start = client_id * classes_per_client
+            assigned_classes = [
+                shuffled_class_labels[(class_start + offset) % len(shuffled_class_labels)]
+                for offset in range(classes_per_client)
+            ]
+            for class_label in assigned_classes:
+                class_to_clients[class_label].append(client_id)
 
-            # 分配对应类别的数据
-            for class_idx in assigned_classes:
-                class_label = class_labels[class_idx]
-                client_data[client_id].extend(classes[class_label])
+        for class_label, assigned_clients in class_to_clients.items():
+            if not assigned_clients:
+                continue
+            class_indices = classes[class_label]
+            shuffled_order = torch.randperm(len(class_indices), generator=generator).tolist()
+            shuffled_indices = [class_indices[i] for i in shuffled_order]
+            base_size = len(shuffled_indices) // len(assigned_clients)
+            remainder = len(shuffled_indices) % len(assigned_clients)
+            start = 0
+            for position, client_id in enumerate(assigned_clients):
+                shard_size = base_size + (1 if position < remainder else 0)
+                end = start + shard_size
+                client_data[client_id].extend(shuffled_indices[start:end])
+                start = end
 
-        # Shuffle and shard each client's assigned classes so clients do not all receive identical data.
-        generator = torch.Generator().manual_seed(42)
         subsets = []
         for indices in client_data:
             if not indices:
                 raise ValueError("Non-IID split produced an empty client dataset")
             shuffled_order = torch.randperm(len(indices), generator=generator).tolist()
             shuffled_indices = [indices[i] for i in shuffled_order]
-            max_samples = max(1, len(dataset) // num_clients)
-            subsets.append(Subset(dataset, shuffled_indices[:max_samples]))
+            subsets.append(Subset(dataset, shuffled_indices))
         return subsets
 
     def get_dataset_info(self, dataset_name: str) -> Dict:
@@ -263,7 +308,7 @@ class DataManager:
                 'classes': ['airplane', 'automobile', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck']
             }
         elif dataset_name == 'cifar100':
-            dataset = datasets.CIFAR100(root=self.data_dir, train=True, download=True)
+            dataset = datasets.CIFAR100(root=self.cifar100_dir, train=True, download=True)
             return {
                 'name': 'CIFAR100',
                 'num_samples': len(dataset),
