@@ -1,6 +1,7 @@
 from flask import Blueprint, jsonify, request
 from ..services.model_manager import ModelManager
 from ..services.activity_service import activity_service
+from ..services.history_service import history_service
 from .utils import get_json_body
 import logging
 
@@ -47,6 +48,15 @@ def get_model_config(dataset_name):
         logger.error(f"Error getting model config: {str(e)}")
         return jsonify({'error': str(e)}), 404
 
+@model_bp.route('/history', methods=['GET'])
+def get_model_history():
+    try:
+        limit = int(request.args.get('limit', 50))
+        return jsonify({'models': history_service.get_model_records(limit)}), 200
+    except Exception as e:
+        logger.error(f"Error getting model history: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
 @model_bp.route('/models/save', methods=['POST'])
 def save_model():
     """保存模型"""
@@ -63,6 +73,12 @@ def save_model():
 
         model = model_manager.create_model(dataset_name, model_name)
         model_manager.save_model(model, path, metadata)
+        history_service.add_model_record(path, {
+            'dataset_name': dataset_name,
+            'model_name': getattr(model, 'model_name', model_name),
+            'model_class': model.__class__.__name__,
+            **metadata
+        })
         activity_service.add_activity(f"模型已保存至 {path}", "success")
         return jsonify({'message': 'Model saved successfully', 'path': path}), 200
     except Exception as e:

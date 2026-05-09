@@ -3,6 +3,7 @@ from ..services.federated_learning import FederatedLearning, FLClient
 from ..services.model_manager import ModelManager
 from ..services.data_manager import DataManager
 from ..services.activity_service import activity_service
+from ..services.history_service import history_service
 from .utils import get_json_body
 import torch
 import logging
@@ -17,6 +18,7 @@ fl_system = None
 training_history = []
 training_status = "Not started"  # "Not started", "Running", "Completed", "Error"
 training_error = None
+current_training_config = {}
 
 @train_bp.route('/algorithms', methods=['GET'])
 def get_aggregation_algorithms():
@@ -63,18 +65,20 @@ def run_training_loop(num_rounds, client_fraction, num_clients):
         # 评估最终模型
         fl_system.evaluate_global_model(fl_system.clients)
         training_status = "Completed"
+        history_service.add_training_run(current_training_config, training_history, training_status)
         activity_service.add_activity(f"联邦学习训练圆满完成！最终准确率: {training_history[-1]['global_metrics']['accuracy']*100:.2f}%", "success")
 
     except Exception as e:
         training_status = "Error"
         training_error = str(e)
+        history_service.add_training_run(current_training_config, training_history, training_status, training_error)
         logger.error(f"Training loop error: {training_error}")
         activity_service.add_activity(f"训练过程中出现错误: {training_error}", "error")
 
 @train_bp.route('/start', methods=['POST'])
 def start_training():
     """启动联邦学习训练"""
-    global fl_system, training_history, training_status, training_error
+    global fl_system, training_history, training_status, training_error, current_training_config
     try:
         if training_status == "Running":
             return jsonify({'error': 'Training is already running'}), 400
@@ -142,6 +146,20 @@ def start_training():
         # 初始化联邦学习系统
         model_manager = ModelManager()
         global_model = model_manager.create_model(dataset_name, model_name)
+        selected_model_name = getattr(global_model, 'model_name', model_name)
+        current_training_config = {
+            'dataset_name': dataset_name,
+            'model_name': selected_model_name,
+            'num_clients': num_clients,
+            'num_rounds': num_rounds,
+            'client_fraction': client_fraction,
+            'batch_size': batch_size,
+            'aggregation_algorithm': aggregation_algorithm,
+            'iid': iid,
+            'non_iid_classes_per_client': non_iid_classes_per_client,
+            'non_iid_seed': non_iid_seed,
+            'device': device
+        }
 
         fl_system = FederatedLearning(
             global_model,
@@ -155,7 +173,7 @@ def start_training():
             adaptive_tau=adaptive_tau
         )
         fl_system.dataset_name = dataset_name
-        fl_system.model_name = getattr(global_model, 'model_name', model_name)
+        fl_system.model_name = selected_model_name
 
         # 准备数据
         data_manager = DataManager()
@@ -203,6 +221,15 @@ def get_training_status():
     """获取训练状态"""
     try:
         if fl_system is None:
+            latest_run = history_service.get_latest_training_run()
+            if latest_run:
+                return jsonify({
+                    'status': latest_run.get('status', 'Completed'),
+                    'current_round': latest_run.get('rounds', 0),
+                    'history': latest_run.get('history', []),
+                    'latest_metrics': latest_run.get('history', [{}])[-1].get('global_metrics', {}) if latest_run.get('history') else {},
+                    'aggregation_algorithm': latest_run.get('aggregation_algorithm')
+                }), 200
             return jsonify({'status': 'Not started'}), 200
 
         history = fl_system.get_training_history()
@@ -250,6 +277,14 @@ def save_trained_model():
         path = data.get('path', './checkpoints/federated_model.pth')
 
         fl_system.save_model(path)
+        history_service.add_model_record(path, {
+            'dataset_name': getattr(fl_system, 'dataset_name', None),
+            'model_name': getattr(fl_system, 'model_name', None),
+            'model_class': fl_system.global_model.__class__.__name__,
+            'rounds': len(fl_system.get_training_history()),
+            'num_clients': len(fl_system.clients),
+            'aggregation_algorithm': fl_system.aggregation_algorithm
+        })
 
         return jsonify({'message': f'Model saved to {path}'}), 200
     except Exception as e:

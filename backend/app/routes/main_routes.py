@@ -1,6 +1,7 @@
 from flask import Blueprint, jsonify, send_from_directory
 from . import train_routes, client_routes, data_routes
 from ..services.activity_service import activity_service
+from ..services.history_service import history_service
 import os
 
 main_bp = Blueprint('main', __name__)
@@ -44,24 +45,31 @@ def get_dashboard_stats():
             if history:
                 latest_accuracy = history[-1]['global_metrics']['accuracy'] * 100
                 total_rounds = len(history)
-                # 转换历史数据格式供前端图表使用
                 for h in history:
                     training_history.append({
                         'round': h['round'],
                         'accuracy': h['global_metrics']['accuracy'],
                         'loss': h['global_metrics']['loss']
                     })
-        
-        # 3. 获取数据集数量
-        # 从 data_routes 获取可用数据集
-        try:
-            from .data_routes import get_available_datasets
-            # 这里我们直接调用逻辑或者硬编码，因为 get_available_datasets 返回的是 response
-            num_datasets = 2 # 默认值
-        except:
-            num_datasets = 2
-        
-        # 4. 获取系统活动
+        if not training_history:
+            latest_run = history_service.get_latest_training_run()
+            if latest_run:
+                latest_accuracy = latest_run.get('final_accuracy', 0) * 100
+                total_rounds = latest_run.get('rounds', 0)
+                total_clients = total_clients or latest_run.get('num_clients', 0)
+                training_history = [
+                    {
+                        'round': h['round'],
+                        'accuracy': h['global_metrics']['accuracy'],
+                        'loss': h['global_metrics']['loss']
+                    }
+                    for h in latest_run.get('history', [])
+                    if 'global_metrics' in h
+                ]
+
+        num_datasets = len(data_routes.AVAILABLE_DATASETS)
+        training_runs = history_service.get_training_runs(10)
+        saved_models = history_service.get_model_records(10)
         recent_activities = activity_service.get_activities()
         
         return jsonify({
@@ -70,6 +78,8 @@ def get_dashboard_stats():
             'total_rounds': total_rounds,
             'num_datasets': num_datasets,
             'training_history': training_history,
+            'training_runs': training_runs,
+            'saved_models': saved_models,
             'activities': recent_activities
         }), 200
     except Exception as e:

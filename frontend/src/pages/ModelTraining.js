@@ -143,6 +143,8 @@ const ModelTraining = () => {
   const [metrics, setMetrics] = useState({});
   const [activeTab, setActiveTab] = useState('config');
   const [performanceMetrics, setPerformanceMetrics] = useState([]);
+  const [trainingRuns, setTrainingRuns] = useState([]);
+  const [savedModels, setSavedModels] = useState([]);
   const intervalRef = useRef(null);
 
   const startStatusPolling = () => {
@@ -160,6 +162,7 @@ const ModelTraining = () => {
             setMetrics(data.latest_metrics);
           }
           if (data.status === 'Completed') {
+            loadHistory();
             clearInterval(intervalRef.current);
           }
         } else if (data.status === 'Not started') {
@@ -227,6 +230,7 @@ const ModelTraining = () => {
     checkInitialStatus();
     loadAggregationAlgorithms();
     loadDatasets();
+    loadHistory();
 
     return () => {
       if (intervalRef.current) {
@@ -234,6 +238,19 @@ const ModelTraining = () => {
       }
     };
   }, []);
+
+  const loadHistory = async () => {
+    try {
+      const response = await fetch('http://localhost:5000/api/main/dashboard_stats');
+      const data = await response.json();
+      if (response.ok) {
+        setTrainingRuns(data.training_runs || []);
+        setSavedModels(data.saved_models || []);
+      }
+    } catch (error) {
+      console.error('获取历史记录失败', error);
+    }
+  };
 
   useEffect(() => {
     // 当训练历史更新时，自动更新性能指标表格
@@ -339,6 +356,7 @@ const ModelTraining = () => {
 
       if (response.ok) {
         message.success('模型保存成功！');
+        loadHistory();
       } else {
         message.error('模型保存失败');
       }
@@ -660,6 +678,47 @@ const ModelTraining = () => {
               scroll={{ x: true }}
             />
           </TrainingCard>
+        </Tabs.TabPane>
+
+        <Tabs.TabPane tab={<span><SaveOutlined />历史记录</span>} key="history">
+          <Row gutter={16}>
+            <Col span={14}>
+              <TrainingCard title="历史训练记录">
+                <Button onClick={loadHistory} style={{ marginBottom: 16 }}>刷新历史</Button>
+                <Table
+                  columns={[
+                    { title: '时间', dataIndex: 'timestamp', key: 'timestamp', render: value => value ? new Date(value).toLocaleString() : '-' },
+                    { title: '数据集', dataIndex: 'dataset_name', key: 'dataset_name', render: value => (value || '').toUpperCase() },
+                    { title: '模型', dataIndex: 'model_name', key: 'model_name' },
+                    { title: '算法', dataIndex: 'aggregation_algorithm', key: 'aggregation_algorithm' },
+                    { title: '轮次', dataIndex: 'rounds', key: 'rounds' },
+                    { title: '准确率', dataIndex: 'final_accuracy', key: 'final_accuracy', render: value => `${((value || 0) * 100).toFixed(2)}%` },
+                    { title: '状态', dataIndex: 'status', key: 'status', render: value => <Tag color={value === 'Completed' ? 'green' : value === 'Error' ? 'red' : 'blue'}>{value}</Tag> }
+                  ]}
+                  dataSource={trainingRuns}
+                  rowKey="id"
+                  pagination={{ pageSize: 5 }}
+                  scroll={{ x: true }}
+                />
+              </TrainingCard>
+            </Col>
+            <Col span={10}>
+              <TrainingCard title="历史模型">
+                <Table
+                  columns={[
+                    { title: '文件名', dataIndex: 'filename', key: 'filename' },
+                    { title: '数据集', dataIndex: 'dataset_name', key: 'dataset_name', render: value => (value || 'unknown').toUpperCase() },
+                    { title: '模型', key: 'model', render: (_, record) => record.model_name || record.model_class || 'model' },
+                    { title: '轮次', dataIndex: 'rounds', key: 'rounds' }
+                  ]}
+                  dataSource={savedModels}
+                  rowKey="id"
+                  pagination={{ pageSize: 5 }}
+                  scroll={{ x: true }}
+                />
+              </TrainingCard>
+            </Col>
+          </Row>
         </Tabs.TabPane>
       </Tabs>
     </PageContainer>

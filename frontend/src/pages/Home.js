@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Row, Col, Statistic, List, Timeline, Button, Space, Spin, message } from 'antd';
+import { Card, Row, Col, Statistic, List, Timeline, Button, Space, Spin, message, Tag } from 'antd';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { DatabaseOutlined, TeamOutlined, LineChartOutlined, PlayCircleOutlined, SettingOutlined, LaptopOutlined, DashboardOutlined, AppstoreOutlined, RightOutlined, SyncOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
@@ -29,6 +29,8 @@ const Home = () => {
     total_rounds: 0,
     num_datasets: 0,
     training_history: [],
+    training_runs: [],
+    saved_models: [],
     activities: []
   });
 
@@ -52,10 +54,6 @@ const Home = () => {
 
   useEffect(() => {
     fetchDashboardStats();
-    
-    // 每 10 秒刷新一次数据，以保持系统动态最新
-    const interval = setInterval(fetchDashboardStats, 10000);
-    return () => clearInterval(interval);
   }, []);
 
   const quickActions = [
@@ -97,9 +95,14 @@ const Home = () => {
     <DashboardContainer>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <h1 style={{ margin: 0 }}>联邦学习平台概览</h1>
-        <Button type="primary" icon={<PlayCircleOutlined />} onClick={() => navigate('/train')}>
-          快速开始训练
-        </Button>
+        <Space>
+          <Button icon={<SyncOutlined />} onClick={fetchDashboardStats}>
+            刷新数据
+          </Button>
+          <Button type="primary" icon={<PlayCircleOutlined />} onClick={() => navigate('/train')}>
+            快速开始训练
+          </Button>
+        </Space>
       </div>
 
       {/* 统计卡片 */}
@@ -197,8 +200,37 @@ const Home = () => {
               </LineChart>
             </ResponsiveContainer>
           </Card>
+          <Card title="历史训练记录">
+            <List
+              dataSource={stats.training_runs || []}
+              locale={{ emptyText: '暂无历史训练记录' }}
+              renderItem={(run) => (
+                <List.Item>
+                  <List.Item.Meta
+                    title={`${(run.dataset_name || '').toUpperCase()} / ${run.model_name || 'model'} / ${run.aggregation_algorithm || 'fedavg'}`}
+                    description={`${new Date(run.timestamp).toLocaleString()} · ${run.rounds || 0} 轮 · ${run.num_clients || 0} 客户端 · 准确率 ${((run.final_accuracy || 0) * 100).toFixed(2)}%`}
+                  />
+                  <Tag color={run.status === 'Completed' ? 'green' : run.status === 'Error' ? 'red' : 'blue'}>{run.status}</Tag>
+                </List.Item>
+              )}
+            />
+          </Card>
         </Col>
         <Col span={8}>
+          <Card title="历史模型" style={{ marginBottom: 16 }}>
+            <List
+              dataSource={stats.saved_models || []}
+              locale={{ emptyText: '暂无历史模型' }}
+              renderItem={(model) => (
+                <List.Item>
+                  <List.Item.Meta
+                    title={model.filename}
+                    description={`${(model.dataset_name || 'unknown').toUpperCase()} / ${model.model_name || model.model_class || 'model'}${model.rounds ? ` · ${model.rounds} 轮` : ''}`}
+                  />
+                </List.Item>
+              )}
+            />
+          </Card>
           <Card title="系统动态">
             <Timeline mode="left">
               {stats.activities && stats.activities.length > 0 ? (

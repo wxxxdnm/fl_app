@@ -7,13 +7,13 @@ import logging
 logger = logging.getLogger(__name__)
 data_bp = Blueprint('data', __name__)
 data_manager = DataManager()
+AVAILABLE_DATASETS = ['mnist', 'cifar10', 'cifar100']
 
 @data_bp.route('/datasets', methods=['GET'])
 def get_available_datasets():
     """获取可用的数据集列表"""
     try:
-        datasets = ['mnist', 'cifar10', 'cifar100']
-        return jsonify({'datasets': datasets}), 200
+        return jsonify({'datasets': AVAILABLE_DATASETS}), 200
     except Exception as e:
         logger.error(f"Error getting datasets: {str(e)}")
         return jsonify({'error': str(e)}), 500
