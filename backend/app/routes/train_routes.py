@@ -83,6 +83,7 @@ def start_training():
         if error_response:
             return error_response
         dataset_name = data.get('dataset_name', 'mnist')
+        model_name = data.get('model_name')
         try:
             num_clients = int(data.get('num_clients', 10))
             num_rounds = int(data.get('num_rounds', 10))
@@ -126,7 +127,7 @@ def start_training():
 
         # 初始化联邦学习系统
         model_manager = ModelManager()
-        global_model = model_manager.create_model(dataset_name)
+        global_model = model_manager.create_model(dataset_name, model_name)
 
         fl_system = FederatedLearning(
             global_model,
@@ -140,6 +141,7 @@ def start_training():
             adaptive_tau=adaptive_tau
         )
         fl_system.dataset_name = dataset_name
+        fl_system.model_name = getattr(global_model, 'model_name', model_name)
 
         # 准备数据
         data_manager = DataManager()

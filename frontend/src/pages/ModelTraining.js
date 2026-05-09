@@ -101,6 +101,7 @@ const ModelTraining = () => {
   const location = useLocation();
   const [datasets, setDatasets] = useState(['mnist', 'cifar10', 'cifar100']);
   const [selectedDataset, setSelectedDataset] = useState('mnist');
+  const [models, setModels] = useState([{ value: 'cnn', label: 'CNN' }]);
   const [aggregationAlgorithms, setAggregationAlgorithms] = useState([
     { value: 'fedavg', label: 'FedAvg' },
     { value: 'fedprox', label: 'FedProx' },
@@ -128,7 +129,8 @@ const ModelTraining = () => {
     proximal_mu: 0.01,
     adaptive_beta1: 0.9,
     adaptive_beta2: 0.99,
-    adaptive_tau: 0.001
+    adaptive_tau: 0.001,
+    model_name: 'cnn'
   });
   const [trainingStatus, setTrainingStatus] = useState('stopped'); // stopped, running, paused
   const [trainingHistory, setTrainingHistory] = useState([]);
@@ -234,6 +236,29 @@ const ModelTraining = () => {
       updatePerformanceMetricsTable(trainingHistory);
     }
   }, [trainingHistory]);
+
+  useEffect(() => {
+    const loadModels = async () => {
+      try {
+        const response = await fetch(`http://localhost:5000/api/model/models?dataset_name=${selectedDataset}`);
+        const data = await response.json();
+        if (response.ok && data.models) {
+          setModels(data.models);
+          setTrainingConfig(prevConfig => {
+            const hasSelectedModel = data.models.some(model => model.value === prevConfig.model_name);
+            return {
+              ...prevConfig,
+              model_name: hasSelectedModel ? prevConfig.model_name : data.models[0]?.value || 'cnn'
+            };
+          });
+        }
+      } catch (error) {
+        console.error('获取模型列表失败', error);
+      }
+    };
+
+    loadModels();
+  }, [selectedDataset]);
 
   const updatePerformanceMetricsTable = (history) => {
     const formattedMetrics = history.map((h, index) => ({
@@ -382,6 +407,20 @@ const ModelTraining = () => {
                   </Row>
                   <Row gutter={16}>
                     <Col span={12}>
+                      <Form.Item label="模型架构" name="model_name">
+                        <Select
+                          value={trainingConfig.model_name}
+                          onChange={(value) => setTrainingConfig(prevConfig => ({ ...prevConfig, model_name: value }))}
+                        >
+                          {models.map(model => (
+                            <Select.Option key={model.value} value={model.value}>
+                              {model.label}
+                            </Select.Option>
+                          ))}
+                        </Select>
+                      </Form.Item>
+                    </Col>
+                    <Col span={12}>
                       <Form.Item label="聚合算法" name="aggregation_algorithm">
                         <Select>
                           {aggregationAlgorithms.map(algorithm => (
@@ -399,6 +438,8 @@ const ModelTraining = () => {
                         </Select>
                       </Form.Item>
                     </Col>
+                  </Row>
+                  <Row gutter={16}>
                     <Col span={12}>
                       <Form.Item label="服务端学习率" name="server_lr">
                         <InputNumber min={0.001} max={10} step={0.1} style={{ width: '100%' }} />

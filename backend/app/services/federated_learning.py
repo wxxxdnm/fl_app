@@ -307,6 +307,10 @@ class FederatedLearning:
         torch.save({
             'model_state_dict': state_dict,
             'model_class': self.global_model.__class__.__name__,
+            'dataset_name': getattr(self.global_model, 'dataset_name', None),
+            'model_name': getattr(self.global_model, 'model_name', None),
+            'input_shape': getattr(self.global_model, 'input_shape', None),
+            'num_classes': getattr(self.global_model, 'num_classes', None),
             'metadata': {
                 'device': self.device,
                 'num_clients': len(self.clients),

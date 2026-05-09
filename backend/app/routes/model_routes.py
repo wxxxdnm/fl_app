@@ -12,7 +12,8 @@ model_manager = ModelManager()
 def get_available_models():
     """获取可用的模型列表"""
     try:
-        models = model_manager.get_available_models()
+        dataset_name = request.args.get('dataset_name')
+        models = model_manager.get_available_models(dataset_name)
         return jsonify({'models': models}), 200
     except Exception as e:
         logger.error(f"Error getting models: {str(e)}")
@@ -22,7 +23,9 @@ def get_available_models():
 def create_model(dataset_name):
     """为指定数据集创建模型"""
     try:
-        model = model_manager.create_model(dataset_name)
+        data = request.get_json(silent=True) or {}
+        model_name = data.get('model_name')
+        model = model_manager.create_model(dataset_name, model_name)
         summary = model_manager.get_model_summary(model)
 
         activity_service.add_activity(f"为数据集 {dataset_name} 创建了新模型", "info")
@@ -52,12 +55,13 @@ def save_model():
         if error_response:
             return error_response
         dataset_name = data.get('dataset_name')
+        model_name = data.get('model_name')
         path = data.get('path', './checkpoints/model.pth')
         metadata = data.get('metadata', {})
         if not dataset_name:
             return jsonify({'error': 'dataset_name is required to create and save a model'}), 400
 
-        model = model_manager.create_model(dataset_name)
+        model = model_manager.create_model(dataset_name, model_name)
         model_manager.save_model(model, path, metadata)
         activity_service.add_activity(f"模型已保存至 {path}", "success")
         return jsonify({'message': 'Model saved successfully', 'path': path}), 200
