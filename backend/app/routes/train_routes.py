@@ -158,9 +158,17 @@ def start_training():
             return jsonify({'error': 'adaptive_tau must be greater than 0'}), 400
         if non_iid_classes_per_client < 1:
             return jsonify({'error': 'non_iid_classes_per_client must be at least 1'}), 400
+        model_manager = ModelManager()
+        try:
+            model_config = model_manager.get_model_config(dataset_name)
+        except ValueError as error:
+            return jsonify({'error': str(error)}), 400
+        supported_model_names = {model['value'] for model in model_config['models']}
+        if model_name and model_name not in supported_model_names:
+            supported = ', '.join(sorted(supported_model_names))
+            return jsonify({'error': f'Unsupported model for {dataset_name}: {model_name}. Supported: {supported}'}), 400
         if not iid:
-            dataset_info = ModelManager().get_model_config(dataset_name)
-            num_classes = dataset_info['num_classes']
+            num_classes = model_config['num_classes']
             if num_clients * non_iid_classes_per_client < num_classes:
                 return jsonify({
                     'error': (
@@ -187,7 +195,6 @@ def start_training():
             device = 'cpu'
 
         # 初始化联邦学习系统
-        model_manager = ModelManager()
         global_model = model_manager.create_model(dataset_name, model_name)
         selected_model_name = getattr(global_model, 'model_name', model_name)
         current_training_config = {

@@ -201,7 +201,7 @@ const DataManagement = () => {
           <Button
             type="primary"
             icon={<PlayCircleOutlined />}
-            onClick={() => startTrainingWithDataset(record.name)}
+            onClick={() => startTrainingWithDataset(record.dataset_id)}
           >
             开始训练
           </Button>
@@ -279,12 +279,13 @@ const DataManagement = () => {
   };
 
   const showDatasetDetails = (dataset) => {
-    setSelectedDataset(dataset.name.toLowerCase());
+    setSelectedDataset(dataset.dataset_id);
     setDatasetInfo(dataset);
   };
 
   const datasetData = allDatasetInfos.map(info => ({
-    key: info.name,
+    key: info.id || (info.name || '').toLowerCase(),
+    dataset_id: info.id || (info.name || '').toLowerCase(),
     name: info.name,
     num_samples: info.num_samples,
     num_classes: info.num_classes,

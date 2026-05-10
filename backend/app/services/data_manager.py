@@ -327,6 +327,7 @@ class DataManager:
         if dataset_name == 'mnist':
             dataset = datasets.MNIST(root=self.data_dir, train=True, download=True)
             return {
+                'id': 'mnist',
                 'name': 'MNIST',
                 'num_samples': len(dataset),
                 'num_classes': 10,
@@ -336,6 +337,7 @@ class DataManager:
         elif dataset_name == 'cifar10':
             dataset = datasets.CIFAR10(root=self.data_dir, train=True, download=True)
             return {
+                'id': 'cifar10',
                 'name': 'CIFAR10',
                 'num_samples': len(dataset),
                 'num_classes': 10,
@@ -345,6 +347,7 @@ class DataManager:
         elif dataset_name == 'cifar100':
             dataset = datasets.CIFAR100(root=self.cifar100_dir, train=True, download=True)
             return {
+                'id': 'cifar100',
                 'name': 'CIFAR100',
                 'num_samples': len(dataset),
                 'num_classes': 100,

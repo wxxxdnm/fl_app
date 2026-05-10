@@ -1,6 +1,6 @@
 import React from 'react';
 import { Layout, Menu } from 'antd';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { HomeOutlined, DatabaseOutlined, PlayCircleOutlined, TeamOutlined, LineChartOutlined } from '@ant-design/icons';
 import styled from 'styled-components';
 
@@ -21,13 +21,18 @@ const Logo = styled.div`
 `;
 
 const Header = () => {
+  const location = useLocation();
+  const selectedKey = ['/', '/data', '/train', '/clients', '/visualization'].find(
+    path => path === '/' ? location.pathname === '/' : location.pathname.startsWith(path)
+  ) || '/';
+
   return (
     <StyledHeader>
       <Logo>联邦学习平台</Logo>
       <Menu
         theme="light"
         mode="horizontal"
-        defaultSelectedKeys={['/']}
+        selectedKeys={[selectedKey]}
         style={{ display: 'inline-block', borderBottom: 'none' }}
       >
         <Menu.Item key="/" icon={<HomeOutlined />}>
