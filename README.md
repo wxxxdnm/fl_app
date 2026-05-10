@@ -16,9 +16,10 @@ FL_app 是一个基于 `Flask + React + PyTorch` 的联邦学习实验与可视�
   - `FedYogi`
   - `FedAdagrad`
 - 支持多模型选择：`CNN`、`MLP`、`LeNet`、`Deep CNN`、`Small ResNet`
+- 支持按数据集筛选兼容模型，后端会校验输入形状、类别数和模型选择
 - 支持训练状态监控、停止训练、指标曲线和训练历史持久化
 - 支持准确率、损失、精确率、召回率、F1、平衡准确率、吞吐量等指标展示
-- 支持客户端状态、客户端性能、类别分布、混淆矩阵等可视化分析
+- 支持客户端状态、客户端性能、类别分布、混淆矩阵等当前和历史可视化分析
 - 支持模型保存、模型加载和历史模型记录
 
 ## 技术栈
@@ -97,7 +98,8 @@ pip install -r requirements.txt
 说明：
 
 - 根目录 `requirements.txt` 不包含 `torch` / `torchvision`
-- 如果直接使用 `backend/requirements.txt`，其中包含 `torch` / `torchvision`
+- `backend/requirements.txt` 包含后端完整运行依赖，包括 `torch` / `torchvision`
+- `python start.py` 会检查并在缺少关键依赖时使用 `backend/requirements.txt` 安装
 - 为避免覆盖已安装的 GPU 版 PyTorch，建议先手动安装 PyTorch，再安装其余依赖
 
 ### 3. 安装前端依赖
@@ -200,6 +202,17 @@ backend/data/uploads/
 - 至少包含 2 个样本和 2 个类别
 
 自定义数据集训练时默认使用 `MLP` 模型。
+
+### 数据集与模型兼容性
+
+平台会根据所选数据集返回兼容模型列表，并在训练启动前进行后端校验：
+
+- `mnist`：`cnn`、`mlp`、`lenet`
+- `cifar10`：`cnn`、`deep_cnn`、`resnet`、`mlp`
+- `cifar100`：`cnn`、`deep_cnn`、`resnet`、`mlp`
+- 自定义数据集：默认使用 `mlp`
+
+如果传入不兼容的数据集或模型组合，训练接口会返回明确的 `400` 错误信息。
 
 ## 联邦训练说明
 
