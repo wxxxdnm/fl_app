@@ -66,7 +66,9 @@ class FLClient:
         self.train_loader = train_loader
         self.test_loader = test_loader
         self.device = device
-        self.optimizer = optim.SGD(self.model.parameters(), lr=0.01, momentum=0.9)
+        self.optimizer_lr = 0.01
+        self.optimizer_momentum = 0.9
+        self.optimizer = self.create_optimizer()
         self.local_epochs = 5
         
         # 客户端元数据和性能指标
@@ -77,6 +79,9 @@ class FLClient:
         self.participation_count = 0
         self.total_training_time = 0.0
         self.last_activity = time.time()
+
+    def create_optimizer(self):
+        return optim.SGD(self.model.parameters(), lr=self.optimizer_lr, momentum=self.optimizer_momentum)
 
     def train(self, global_state_dict: Dict = None, proximal_mu: float = 0.0) -> Dict:
         """在本地客户端训练模型"""
@@ -176,7 +181,9 @@ class FederatedLearning:
     }
     ADAPTIVE_ALGORITHMS = {'fedadam', 'fedyogi', 'fedadagrad'}
     DEFAULT_SERVER_LR = 1.0
-    DEFAULT_ADAPTIVE_SERVER_LR = 0.01
+    DEFAULT_ADAPTIVE_SERVER_LR = 0.001
+    MAX_ADAPTIVE_SERVER_LR = 0.01
+    ADAPTIVE_MAX_STEP_NORM_RATIO = 1.0
 
     def __init__(
         self,
@@ -201,6 +208,10 @@ class FederatedLearning:
             raise ValueError(f"Unsupported aggregation algorithm: {aggregation_algorithm}. Supported: {supported}")
         if server_lr is None:
             server_lr = self.DEFAULT_ADAPTIVE_SERVER_LR if self.aggregation_algorithm in self.ADAPTIVE_ALGORITHMS else self.DEFAULT_SERVER_LR
+        if self.aggregation_algorithm in self.ADAPTIVE_ALGORITHMS and server_lr > self.MAX_ADAPTIVE_SERVER_LR:
+            raise ValueError(
+                f"server_lr for {self.SUPPORTED_ALGORITHMS[self.aggregation_algorithm]} must be <= {self.MAX_ADAPTIVE_SERVER_LR}"
+            )
         self.server_lr = server_lr
         self.server_momentum = server_momentum
         self.proximal_mu = proximal_mu
@@ -209,6 +220,7 @@ class FederatedLearning:
         self.adaptive_tau = adaptive_tau
         self.server_momentum_state = {}
         self.server_adaptive_state = {}
+        self.trainable_parameter_names = {name for name, _ in self.global_model.named_parameters()}
 
     def add_client(self, client: FLClient):
         """添加客户端到联邦学习系统"""
@@ -254,6 +266,9 @@ class FederatedLearning:
             if not torch.is_floating_point(global_value):
                 new_state[key] = averaged_value
                 continue
+            if key not in self.trainable_parameter_names:
+                new_state[key] = averaged_value
+                continue
 
             averaged_value = averaged_value.to(self.device)
             global_value = global_value.to(self.device)
@@ -277,11 +292,23 @@ class FederatedLearning:
                     second_moment = second_moment - (1 - self.adaptive_beta2) * delta_sq * torch.sign(second_moment - delta_sq)
                 else:
                     second_moment = self.adaptive_beta2 * second_moment + (1 - self.adaptive_beta2) * delta_sq
+                second_moment = torch.clamp(second_moment, min=0.0)
                 self.server_adaptive_state[key] = (
                     first_moment.detach().clone(),
                     second_moment.detach().clone()
                 )
-                new_state[key] = global_value + self.server_lr * first_moment / (torch.sqrt(second_moment) + self.adaptive_tau)
+                adaptive_step = self.server_lr * first_moment / (torch.sqrt(second_moment) + self.adaptive_tau)
+                step_norm = torch.norm(adaptive_step)
+                delta_norm = torch.norm(delta)
+                max_step_norm = delta_norm * self.ADAPTIVE_MAX_STEP_NORM_RATIO
+                if (
+                    max_step_norm.item() > 0
+                    and torch.isfinite(step_norm)
+                    and torch.isfinite(max_step_norm)
+                    and step_norm > max_step_norm
+                ):
+                    adaptive_step = adaptive_step * (max_step_norm / (step_norm + 1e-12))
+                new_state[key] = global_value + adaptive_step
             else:
                 new_state[key] = averaged_value
 
@@ -303,9 +330,11 @@ class FederatedLearning:
         for client in selected_clients:
             # 将全局模型参数复制到客户端
             client.model.load_state_dict(copy.deepcopy(self.global_model.state_dict()))
+            client.optimizer = client.create_optimizer()
 
             # 客户端本地训练
             train_metrics = client.train(global_state_for_prox, self.proximal_mu)
+            train_metrics['client_id'] = client.client_id
 
             # 收集客户端更新
             client_updates.append({
@@ -322,7 +351,7 @@ class FederatedLearning:
         self.global_model.load_state_dict(aggregated_state)
 
         # 计算本轮全局指标
-        global_metrics = self.evaluate_global_model(selected_clients)
+        global_metrics = self.evaluate_global_model(self.clients)
 
         round_history = {
             'round': len(self.history) + 1,

@@ -35,6 +35,17 @@ class DataManager:
                 transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))
             ])
         }
+        self.eval_transforms = {
+            'mnist': self.transforms['mnist'],
+            'cifar10': transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
+            ]),
+            'cifar100': transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))
+            ])
+        }
 
         self.datasets = {}
         self.dataloaders = {}
@@ -88,10 +99,7 @@ class DataManager:
                 root=self.data_dir,
                 train=False,
                 download=True,
-                transform=transforms.Compose([
-                    transforms.ToTensor(),
-                    transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
-                ])
+                transform=self.eval_transforms['cifar10']
             )
 
         dataloader = DataLoader(
@@ -122,10 +130,7 @@ class DataManager:
                 root=self.cifar100_dir,
                 train=False,
                 download=True,
-                transform=transforms.Compose([
-                    transforms.ToTensor(),
-                    transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))
-                ])
+                transform=self.eval_transforms['cifar100']
             )
 
         dataloader = DataLoader(
@@ -151,12 +156,24 @@ class DataManager:
                 download=True,
                 transform=self.transforms['mnist']
             )
+            eval_dataset = datasets.MNIST(
+                root=self.data_dir,
+                train=True,
+                download=True,
+                transform=self.eval_transforms['mnist']
+            )
         elif dataset_name == 'cifar10':
             full_dataset = datasets.CIFAR10(
                 root=self.data_dir,
                 train=True,
                 download=True,
                 transform=self.transforms['cifar10']
+            )
+            eval_dataset = datasets.CIFAR10(
+                root=self.data_dir,
+                train=True,
+                download=True,
+                transform=self.eval_transforms['cifar10']
             )
         elif dataset_name == 'cifar100':
             full_dataset = datasets.CIFAR100(
@@ -165,8 +182,15 @@ class DataManager:
                 download=True,
                 transform=self.transforms['cifar100']
             )
+            eval_dataset = datasets.CIFAR100(
+                root=self.cifar100_dir,
+                train=True,
+                download=True,
+                transform=self.eval_transforms['cifar100']
+            )
         elif custom_dataset_manager.is_custom_dataset(dataset_name):
             full_dataset = custom_dataset_manager.load_dataset(dataset_name)
+            eval_dataset = full_dataset
         else:
             raise ValueError(f"Unsupported dataset: {dataset_name}")
 
@@ -207,16 +231,24 @@ class DataManager:
                 train_size -= 1
                 test_size = 1
             train_subset, test_subset = random_split(subset, [train_size, test_size])
+            test_indices = self._resolve_subset_indices(test_subset)
+            eval_test_subset = Subset(eval_dataset, test_indices) if eval_dataset is not full_dataset else test_subset
 
             client_dataloaders[f'client_{i}_train'] = DataLoader(
                 train_subset, batch_size=batch_size, shuffle=True
             )
             client_dataloaders[f'client_{i}_test'] = DataLoader(
-                test_subset, batch_size=batch_size, shuffle=False
+                eval_test_subset, batch_size=batch_size, shuffle=False
             )
 
         logger.info(f"Created federated dataset with {num_clients} clients")
         return client_dataloaders
+
+    def _resolve_subset_indices(self, dataset):
+        if isinstance(dataset, Subset):
+            parent_indices = self._resolve_subset_indices(dataset.dataset)
+            return [parent_indices[index] for index in dataset.indices]
+        return list(range(len(dataset)))
 
     def _extract_labels(self, dataset):
         if hasattr(dataset, 'targets'):

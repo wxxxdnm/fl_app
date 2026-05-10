@@ -101,7 +101,8 @@ const formatPercent = (value) => typeof value === 'number' ? (value * 100).toFix
 const formatNumber = (value, digits = 4) => typeof value === 'number' ? value.toFixed(digits) : '-';
 const ADAPTIVE_AGGREGATION_ALGORITHMS = new Set(['fedadam', 'fedyogi', 'fedadagrad']);
 const DEFAULT_SERVER_LR = 1.0;
-const DEFAULT_ADAPTIVE_SERVER_LR = 0.01;
+const DEFAULT_ADAPTIVE_SERVER_LR = 0.001;
+const MAX_ADAPTIVE_SERVER_LR = 0.01;
 
 const ModelTraining = () => {
   const location = useLocation();
@@ -159,7 +160,7 @@ const ModelTraining = () => {
         const response = await fetch('http://localhost:5000/api/train/status');
         const data = await response.json();
 
-        if (data.status === 'Running' || data.status === 'Completed') {
+        if (['Running', 'Completed', 'Stopped'].includes(data.status)) {
           setTrainingStatus(data.status === 'Running' ? 'running' : 'stopped');
           setCurrentRound(data.current_round);
           setTrainingHistory(data.history || []); 
@@ -168,6 +169,8 @@ const ModelTraining = () => {
           }
           if (data.status === 'Completed') {
             loadHistory();
+          }
+          if (data.status !== 'Running') {
             clearInterval(intervalRef.current);
           }
         } else if (data.status === 'Not started') {
@@ -196,7 +199,7 @@ const ModelTraining = () => {
         if (data.status === 'Running') {
           setTrainingStatus('running');
           startStatusPolling();
-        } else if (data.status === 'Completed' && data.history && data.history.length > 0) {
+        } else if (['Completed', 'Stopped'].includes(data.status) && data.history && data.history.length > 0) {
           setTrainingHistory(data.history);
           setCurrentRound(data.current_round);
           if (data.latest_metrics) {
@@ -337,11 +340,16 @@ const ModelTraining = () => {
 
   const stopTraining = async () => {
     try {
-      await fetch('http://localhost:5000/api/train/stop', {
+      const response = await fetch('http://localhost:5000/api/train/stop', {
         method: 'POST'
       });
-      setTrainingStatus('stopped');
-      message.info('训练已停止');
+      const data = await response.json();
+      if (response.ok) {
+        setTrainingStatus('stopped');
+        message.info('训练已停止');
+      } else {
+        message.error(`停止训练失败: ${data.error}`);
+      }
     } catch (error) {
       message.error('停止训练失败');
     }
@@ -445,7 +453,7 @@ const ModelTraining = () => {
                     const nextValues = { ...changedValues };
                     if (Object.prototype.hasOwnProperty.call(changedValues, 'aggregation_algorithm')) {
                       const isAdaptive = ADAPTIVE_AGGREGATION_ALGORITHMS.has(changedValues.aggregation_algorithm);
-                      if (isAdaptive && trainingConfig.server_lr === DEFAULT_SERVER_LR) {
+                      if (isAdaptive && trainingConfig.server_lr > MAX_ADAPTIVE_SERVER_LR) {
                         nextValues.server_lr = DEFAULT_ADAPTIVE_SERVER_LR;
                         form.setFieldsValue({ server_lr: DEFAULT_ADAPTIVE_SERVER_LR });
                       } else if (!isAdaptive && trainingConfig.server_lr === DEFAULT_ADAPTIVE_SERVER_LR) {
@@ -509,7 +517,12 @@ const ModelTraining = () => {
                   <Row gutter={16}>
                     <Col span={12}>
                       <Form.Item label="服务端学习率" name="server_lr">
-                        <InputNumber min={0.001} max={10} step={0.1} style={{ width: '100%' }} />
+                        <InputNumber
+                          min={0.0001}
+                          max={ADAPTIVE_AGGREGATION_ALGORITHMS.has(trainingConfig.aggregation_algorithm) ? MAX_ADAPTIVE_SERVER_LR : 10}
+                          step={ADAPTIVE_AGGREGATION_ALGORITHMS.has(trainingConfig.aggregation_algorithm) ? 0.001 : 0.1}
+                          style={{ width: '100%' }}
+                        />
                       </Form.Item>
                     </Col>
                   </Row>

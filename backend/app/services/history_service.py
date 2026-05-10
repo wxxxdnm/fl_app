@@ -43,9 +43,17 @@ class HistoryService:
                 return str(value)
         return value
 
-    def add_training_run(self, config: Dict, history: List[Dict], status: str = "Completed", error: str = None) -> Dict:
+    def add_training_run(
+        self,
+        config: Dict,
+        history: List[Dict],
+        status: str = "Completed",
+        error: str = None,
+        visualization: Dict = None
+    ) -> Dict:
         records = self._read_json(self.training_history_path)
         safe_history = self._to_json_safe(history)
+        safe_visualization = self._to_json_safe(visualization or {})
         final_metrics = safe_history[-1].get("global_metrics", {}) if safe_history else {}
         timestamp = datetime.datetime.now().isoformat()
         record = {
@@ -62,11 +70,19 @@ class HistoryService:
             "non_iid_classes_per_client": config.get("non_iid_classes_per_client"),
             "non_iid_seed": config.get("non_iid_seed"),
             "device": config.get("device"),
+            "batch_size": config.get("batch_size"),
+            "server_lr": config.get("server_lr"),
+            "server_momentum": config.get("server_momentum"),
+            "proximal_mu": config.get("proximal_mu"),
+            "adaptive_beta1": config.get("adaptive_beta1"),
+            "adaptive_beta2": config.get("adaptive_beta2"),
+            "adaptive_tau": config.get("adaptive_tau"),
             "rounds": len(safe_history),
             "final_accuracy": final_metrics.get("accuracy", 0),
             "final_loss": final_metrics.get("loss", 0),
             "final_f1_score": final_metrics.get("f1_score", 0),
             "history": safe_history,
+            "visualization": safe_visualization,
             "error": error
         }
         records.insert(0, record)

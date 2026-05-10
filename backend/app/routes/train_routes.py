@@ -4,6 +4,7 @@ from ..services.model_manager import ModelManager
 from ..services.data_manager import DataManager
 from ..services.activity_service import activity_service
 from ..services.history_service import history_service
+from ..services.visualization_service import get_visualization_snapshot
 from .utils import get_json_body
 import torch
 import logging
@@ -19,38 +20,45 @@ training_history = []
 training_status = "Not started"  # "Not started", "Running", "Completed", "Error"
 training_error = None
 current_training_config = {}
+training_stop_requested = False
+active_training_id = 0
+training_thread = None
 
 @train_bp.route('/algorithms', methods=['GET'])
 def get_aggregation_algorithms():
     """获取支持的联邦聚合算法"""
     return jsonify({'algorithms': FederatedLearning.get_available_algorithms()}), 200
 
-def run_training_loop(num_rounds, client_fraction, num_clients):
+def run_training_loop(num_rounds, client_fraction, num_clients, training_id, training_system):
     """后台训练循环"""
     global training_status, training_history, training_error
     try:
         training_status = "Running"
         activity_service.add_activity(
-            f"联邦学习训练开始：算法 {fl_system.aggregation_algorithm}，总共 {num_rounds} 轮，参与比例 {client_fraction}",
+            f"联邦学习训练开始：算法 {training_system.aggregation_algorithm}，总共 {num_rounds} 轮，参与比例 {client_fraction}",
             "process"
         )
         
         for round_num in range(num_rounds):
-            if fl_system is None:  # 训练被停止
-                activity_service.add_activity("训练已手动停止", "warning")
+            if training_stop_requested or training_id != active_training_id:
+                if training_id == active_training_id:
+                    training_status = "Stopped"
+                    activity_service.add_activity("训练已手动停止", "warning")
                 return
 
             # 选择部分客户端参与本轮训练
             num_selected = max(1, int(client_fraction * num_clients))
             indices = torch.randperm(num_clients)[:num_selected].tolist()
-            selected_clients = [fl_system.clients[i] for i in indices]
+            selected_clients = [training_system.clients[i] for i in indices]
             
             # 设置选中的客户端状态为忙碌
             for client in selected_clients:
                 client.status = 'busy'
 
             # 执行一轮训练
-            round_result = fl_system.train_round(selected_clients)
+            round_result = training_system.train_round(selected_clients)
+            if training_id != active_training_id:
+                return
             training_history.append(round_result)
             
             # 恢复客户端状态为活跃
@@ -62,13 +70,35 @@ def run_training_loop(num_rounds, client_fraction, num_clients):
             if (round_num + 1) % 5 == 0 or round_num == 0:
                 activity_service.add_activity(f"第 {round_num + 1} 轮训练完成，准确率: {round_result['global_metrics']['accuracy']*100:.2f}%", "success")
 
+            if training_stop_requested:
+                training_status = "Stopped"
+                activity_service.add_activity("训练已手动停止", "warning")
+                return
+
         # 评估最终模型
-        fl_system.evaluate_global_model(fl_system.clients)
+        if training_stop_requested or training_id != active_training_id:
+            if training_id == active_training_id:
+                training_status = "Stopped"
+                activity_service.add_activity("训练已手动停止", "warning")
+            return
+        training_system.evaluate_global_model(training_system.clients)
         training_status = "Completed"
-        history_service.add_training_run(current_training_config, training_history, training_status)
+        visualization_snapshot = {}
+        try:
+            visualization_snapshot = get_visualization_snapshot(training_system, current_training_config.get('dataset_name'))
+        except Exception as snapshot_error:
+            logger.warning(f"Failed to build visualization snapshot: {snapshot_error}")
+        history_service.add_training_run(
+            current_training_config,
+            training_history,
+            training_status,
+            visualization=visualization_snapshot
+        )
         activity_service.add_activity(f"联邦学习训练圆满完成！最终准确率: {training_history[-1]['global_metrics']['accuracy']*100:.2f}%", "success")
 
     except Exception as e:
+        if training_id != active_training_id:
+            return
         training_status = "Error"
         training_error = str(e)
         history_service.add_training_run(current_training_config, training_history, training_status, training_error)
@@ -79,6 +109,7 @@ def run_training_loop(num_rounds, client_fraction, num_clients):
 def start_training():
     """启动联邦学习训练"""
     global fl_system, training_history, training_status, training_error, current_training_config
+    global training_stop_requested, active_training_id, training_thread
     try:
         if training_status == "Running":
             return jsonify({'error': 'Training is already running'}), 400
@@ -140,6 +171,17 @@ def start_training():
         if aggregation_algorithm not in FederatedLearning.SUPPORTED_ALGORITHMS:
             supported = ', '.join(sorted(FederatedLearning.SUPPORTED_ALGORITHMS))
             return jsonify({'error': f'Unsupported aggregation_algorithm. Supported: {supported}'}), 400
+        if (
+            aggregation_algorithm in FederatedLearning.ADAPTIVE_ALGORITHMS
+            and server_lr is not None
+            and server_lr > FederatedLearning.MAX_ADAPTIVE_SERVER_LR
+        ):
+            return jsonify({
+                'error': (
+                    f'server_lr for {FederatedLearning.SUPPORTED_ALGORITHMS[aggregation_algorithm]} '
+                    f'must be <= {FederatedLearning.MAX_ADAPTIVE_SERVER_LR}'
+                )
+            }), 400
         if device == 'cuda' and not torch.cuda.is_available():
             logger.warning("CUDA is not available, falling back to CPU for training.")
             device = 'cpu'
@@ -205,14 +247,18 @@ def start_training():
         # 开始训练
         training_history = []
         training_error = None
+        training_stop_requested = False
+        active_training_id += 1
+        current_training_id = active_training_id
+        training_status = "Running"
         
         # 启动后台线程执行训练
-        thread = threading.Thread(
+        training_thread = threading.Thread(
             target=run_training_loop,
-            args=(num_rounds, client_fraction, num_clients),
+            args=(num_rounds, client_fraction, num_clients, current_training_id, fl_system),
             daemon=True
         )
-        thread.start()
+        training_thread.start()
 
         return jsonify({
             'message': 'Training started in background',
@@ -229,6 +275,17 @@ def start_training():
 def get_training_status():
     """获取训练状态"""
     try:
+        if training_status == "Stopped":
+            history = fl_system.get_training_history() if fl_system is not None else training_history
+            response = {
+                'status': training_status,
+                'current_round': len(history),
+                'history': history
+            }
+            if history:
+                response['latest_metrics'] = history[-1]['global_metrics']
+            return jsonify(response), 200
+
         if fl_system is None:
             latest_run = history_service.get_latest_training_run()
             if latest_run:
@@ -278,9 +335,11 @@ def delete_training_history(run_id):
 def stop_training():
     """停止训练"""
     try:
-        global fl_system
-        fl_system = None
-        return jsonify({'message': 'Training stopped'}), 200
+        global training_status, training_stop_requested, active_training_id
+        training_stop_requested = True
+        active_training_id += 1
+        training_status = "Stopped"
+        return jsonify({'message': 'Training stopped', 'status': training_status}), 200
     except Exception as e:
         logger.error(f"Error stopping training: {str(e)}")
         return jsonify({'error': str(e)}), 500

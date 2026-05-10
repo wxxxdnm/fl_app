@@ -122,11 +122,20 @@ const Visualization = () => {
   const applyHistoricalRun = (run) => {
     const history = run.history || [];
     const finalRound = history[history.length - 1] || {};
+    const visualization = run.visualization || {};
+    const modelPerformance = visualization.model_performance || visualization.client_performance;
+    const clientDistribution = visualization.client_distribution;
+    const confusionMatrix = visualization.confusion_matrix;
 
     setChartData(prev => ({
       ...prev,
       trainingCurves: formatHistoricalTrainingData(history),
-      clientPerformance: formatHistoricalClientPerformance(finalRound)
+      clientPerformance: modelPerformance
+        ? formatPerformanceData(modelPerformance)
+        : formatHistoricalClientPerformance(finalRound),
+      clientDistribution: clientDistribution ? formatDistributionData(clientDistribution) : [],
+      distributionStats: clientDistribution ? formatDistributionStats(clientDistribution.stats) : [],
+      confusionMatrix: confusionMatrix ? formatConfusionMatrixData(confusionMatrix) : { data: [], classes: [] }
     }));
     setSelectedRunSummary({
       datasetName: run.dataset_name,
