@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Card, Button, Select, Input, Table, Tag, message, Divider, Space, Progress, Tabs, Row, Col, Statistic, Form, InputNumber, Switch, Popconfirm } from 'antd';
 import { PlayCircleOutlined, PauseCircleOutlined, StopOutlined, SaveOutlined, LineChartOutlined, DashboardOutlined, SettingOutlined, DeleteOutlined } from '@ant-design/icons';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 
 const PageContainer = styled.div`
@@ -99,9 +99,14 @@ const enrichAggregationAlgorithm = (algorithm) => {
 
 const formatPercent = (value) => typeof value === 'number' ? (value * 100).toFixed(2) + '%' : '-';
 const formatNumber = (value, digits = 4) => typeof value === 'number' ? value.toFixed(digits) : '-';
+const ADAPTIVE_AGGREGATION_ALGORITHMS = new Set(['fedadam', 'fedyogi', 'fedadagrad']);
+const DEFAULT_SERVER_LR = 1.0;
+const DEFAULT_ADAPTIVE_SERVER_LR = 0.01;
 
 const ModelTraining = () => {
   const location = useLocation();
+  const navigate = useNavigate();
+  const [form] = Form.useForm();
   const [datasets, setDatasets] = useState(['mnist', 'cifar10', 'cifar100']);
   const [selectedDataset, setSelectedDataset] = useState('mnist');
   const [models, setModels] = useState([{ value: 'cnn', label: 'CNN' }]);
@@ -127,7 +132,7 @@ const ModelTraining = () => {
     iid: true,
     batch_size: 64,
     device: 'cuda',
-    server_lr: 1.0,
+    server_lr: DEFAULT_SERVER_LR,
     server_momentum: 0.9,
     proximal_mu: 0.01,
     adaptive_beta1: 0.9,
@@ -433,10 +438,22 @@ const ModelTraining = () => {
             <Col span={16}>
               <TrainingCard title="训练参数配置">
                 <Form
+                  form={form}
                   layout="vertical"
                   initialValues={trainingConfig}
                   onValuesChange={(changedValues) => {
-                    setTrainingConfig(prevConfig => ({ ...prevConfig, ...changedValues }));
+                    const nextValues = { ...changedValues };
+                    if (Object.prototype.hasOwnProperty.call(changedValues, 'aggregation_algorithm')) {
+                      const isAdaptive = ADAPTIVE_AGGREGATION_ALGORITHMS.has(changedValues.aggregation_algorithm);
+                      if (isAdaptive && trainingConfig.server_lr === DEFAULT_SERVER_LR) {
+                        nextValues.server_lr = DEFAULT_ADAPTIVE_SERVER_LR;
+                        form.setFieldsValue({ server_lr: DEFAULT_ADAPTIVE_SERVER_LR });
+                      } else if (!isAdaptive && trainingConfig.server_lr === DEFAULT_ADAPTIVE_SERVER_LR) {
+                        nextValues.server_lr = DEFAULT_SERVER_LR;
+                        form.setFieldsValue({ server_lr: DEFAULT_SERVER_LR });
+                      }
+                    }
+                    setTrainingConfig(prevConfig => ({ ...prevConfig, ...nextValues }));
                   }}
                 >
                   <Row gutter={16}>
@@ -715,14 +732,23 @@ const ModelTraining = () => {
                       title: '操作',
                       key: 'action',
                       render: (_, record) => (
-                        <Popconfirm
-                          title="确认删除这条历史训练记录？"
-                          okText="删除"
-                          cancelText="取消"
-                          onConfirm={() => deleteTrainingRun(record.id)}
-                        >
-                          <Button danger size="small" icon={<DeleteOutlined />}>删除</Button>
-                        </Popconfirm>
+                        <Space>
+                          <Button
+                            size="small"
+                            icon={<LineChartOutlined />}
+                            onClick={() => navigate('/visualization', { state: { selectedRunId: record.id } })}
+                          >
+                            可视化
+                          </Button>
+                          <Popconfirm
+                            title="确认删除这条历史训练记录？"
+                            okText="删除"
+                            cancelText="取消"
+                            onConfirm={() => deleteTrainingRun(record.id)}
+                          >
+                            <Button danger size="small" icon={<DeleteOutlined />}>删除</Button>
+                          </Popconfirm>
+                        </Space>
                       )
                     }
                   ]}

@@ -93,7 +93,8 @@ def start_training():
             num_rounds = int(data.get('num_rounds', 10))
             client_fraction = float(data.get('client_fraction', 0.5))
             batch_size = int(data.get('batch_size', 64))
-            server_lr = float(data.get('server_lr', 1.0))
+            server_lr_value = data.get('server_lr')
+            server_lr = float(server_lr_value) if server_lr_value is not None else None
             server_momentum = float(data.get('server_momentum', 0.9))
             proximal_mu = float(data.get('proximal_mu', 0.01))
             adaptive_beta1 = float(data.get('adaptive_beta1', 0.9))
@@ -114,7 +115,7 @@ def start_training():
             return jsonify({'error': 'client_fraction must be between 0 and 1'}), 400
         if batch_size < 1:
             return jsonify({'error': 'batch_size must be at least 1'}), 400
-        if server_lr <= 0:
+        if server_lr is not None and server_lr <= 0:
             return jsonify({'error': 'server_lr must be greater than 0'}), 400
         if not 0 <= server_momentum < 1:
             return jsonify({'error': 'server_momentum must be in [0, 1)'}), 400
@@ -174,6 +175,14 @@ def start_training():
         )
         fl_system.dataset_name = dataset_name
         fl_system.model_name = selected_model_name
+        current_training_config.update({
+            'server_lr': fl_system.server_lr,
+            'server_momentum': server_momentum,
+            'proximal_mu': proximal_mu,
+            'adaptive_beta1': adaptive_beta1,
+            'adaptive_beta2': adaptive_beta2,
+            'adaptive_tau': adaptive_tau
+        })
 
         # 准备数据
         data_manager = DataManager()

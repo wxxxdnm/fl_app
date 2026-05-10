@@ -111,9 +111,9 @@ class FLClient:
                 confusion_matrix = update_confusion_matrix(confusion_matrix, target, predicted, num_classes)
 
         metrics = {
-            'loss': total_loss / max(1, len(self.train_loader)),
+            'loss': total_loss / max(1, len(self.train_loader) * self.local_epochs),
             'accuracy': correct / max(1, total),
-            'num_samples': total
+            'num_samples': len(self.train_loader.dataset) if hasattr(self.train_loader, 'dataset') else total
         }
 
         training_time = time.time() - start_time
@@ -174,13 +174,16 @@ class FederatedLearning:
         'fedyogi': 'FedYogi',
         'fedadagrad': 'FedAdagrad',
     }
+    ADAPTIVE_ALGORITHMS = {'fedadam', 'fedyogi', 'fedadagrad'}
+    DEFAULT_SERVER_LR = 1.0
+    DEFAULT_ADAPTIVE_SERVER_LR = 0.01
 
     def __init__(
         self,
         global_model: nn.Module,
         device: str = 'cuda' if torch.cuda.is_available() else 'cpu',
         aggregation_algorithm: str = 'fedavg',
-        server_lr: float = 1.0,
+        server_lr: float = None,
         server_momentum: float = 0.9,
         proximal_mu: float = 0.01,
         adaptive_beta1: float = 0.9,
@@ -196,6 +199,8 @@ class FederatedLearning:
         if self.aggregation_algorithm not in self.SUPPORTED_ALGORITHMS:
             supported = ', '.join(sorted(self.SUPPORTED_ALGORITHMS))
             raise ValueError(f"Unsupported aggregation algorithm: {aggregation_algorithm}. Supported: {supported}")
+        if server_lr is None:
+            server_lr = self.DEFAULT_ADAPTIVE_SERVER_LR if self.aggregation_algorithm in self.ADAPTIVE_ALGORITHMS else self.DEFAULT_SERVER_LR
         self.server_lr = server_lr
         self.server_momentum = server_momentum
         self.proximal_mu = proximal_mu
@@ -259,7 +264,7 @@ class FederatedLearning:
                 velocity = self.server_momentum * velocity + delta
                 self.server_momentum_state[key] = velocity.detach().clone()
                 new_state[key] = global_value + self.server_lr * velocity
-            elif self.aggregation_algorithm in ('fedadam', 'fedyogi', 'fedadagrad'):
+            elif self.aggregation_algorithm in self.ADAPTIVE_ALGORITHMS:
                 first_moment, second_moment = self.server_adaptive_state.get(
                     key,
                     (torch.zeros_like(delta), torch.zeros_like(delta))

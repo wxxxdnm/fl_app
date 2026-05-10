@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { BarChartOutlined, LineChartOutlined, PieChartOutlined, RadarChartOutlined } from '@ant-design/icons';
-import { Button, Card, Col, Row, Select, Space, Tabs } from 'antd';
+import { Button, Card, Col, Row, Select, Space, Statistic, Table, Tabs, Tag } from 'antd';
+import { useLocation } from 'react-router-dom';
 import {
   Bar,
   BarChart,
@@ -34,8 +35,12 @@ const ChartCard = styled(Card)`
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8', '#82ca9d', '#ffc658', '#ff7c7c'];
 
 const Visualization = () => {
+  const location = useLocation();
   const [activeTab, setActiveTab] = useState('training');
   const [selectedDataset, setSelectedDataset] = useState('mnist');
+  const [selectedRunId, setSelectedRunId] = useState(location.state?.selectedRunId || 'current');
+  const [trainingRuns, setTrainingRuns] = useState([]);
+  const [selectedRunSummary, setSelectedRunSummary] = useState(null);
   const [chartData, setChartData] = useState({
     trainingCurves: [],
     clientPerformance: [],
@@ -48,8 +53,34 @@ const Visualization = () => {
     loadVisualizationData();
   }, []);
 
+  useEffect(() => {
+    if (selectedRunId === 'current') {
+      loadVisualizationData();
+      return;
+    }
+
+    const selectedRun = trainingRuns.find(run => run.id === selectedRunId);
+    if (selectedRun) {
+      applyHistoricalRun(selectedRun);
+    }
+  }, [selectedRunId]);
+
   const loadVisualizationData = async () => {
     try {
+      const dashboardResponse = await fetch('http://localhost:5000/api/main/dashboard_stats');
+      if (dashboardResponse.ok) {
+        const dashboardData = await dashboardResponse.json();
+        const runs = dashboardData.training_runs || [];
+        setTrainingRuns(runs);
+        if (selectedRunId !== 'current') {
+          const selectedRun = runs.find(run => run.id === selectedRunId);
+          if (selectedRun) {
+            applyHistoricalRun(selectedRun);
+            return;
+          }
+        }
+      }
+
       const trainingResponse = await fetch('http://localhost:5000/api/viz/training_curves');
       if (trainingResponse.ok) {
         const trainingData = await trainingResponse.json();
@@ -81,9 +112,35 @@ const Visualization = () => {
         const confusionData = await confusionResponse.json();
         setChartData(prev => ({ ...prev, confusionMatrix: formatConfusionMatrixData(confusionData) }));
       }
+
+      setSelectedRunSummary(null);
     } catch (error) {
       console.error('加载可视化数据失败', error);
     }
+  };
+
+  const applyHistoricalRun = (run) => {
+    const history = run.history || [];
+    const finalRound = history[history.length - 1] || {};
+
+    setChartData(prev => ({
+      ...prev,
+      trainingCurves: formatHistoricalTrainingData(history),
+      clientPerformance: formatHistoricalClientPerformance(finalRound)
+    }));
+    setSelectedRunSummary({
+      datasetName: run.dataset_name,
+      modelName: run.model_name,
+      algorithm: run.aggregation_algorithm,
+      rounds: run.rounds,
+      status: run.status,
+      finalAccuracy: run.final_accuracy,
+      finalLoss: run.final_loss,
+      finalF1Score: run.final_f1_score,
+      timestamp: run.timestamp,
+      numClients: run.num_clients,
+      iid: run.iid
+    });
   };
 
   const formatTrainingData = (data) => {
@@ -105,6 +162,36 @@ const Visualization = () => {
       f1Score: f1Scores[index] || 0,
       balancedAccuracy: balancedAccuracies[index] || 0,
       samplesPerSecond: samplesPerSecond[index] || 0
+    }));
+  };
+
+  const formatHistoricalTrainingData = (history = []) => history.map(item => {
+    const metrics = item.global_metrics || {};
+    return {
+      round: item.round,
+      accuracy: metrics.accuracy || 0,
+      loss: metrics.loss || 0,
+      precision: metrics.precision || 0,
+      recall: metrics.recall || 0,
+      f1Score: metrics.f1_score || 0,
+      balancedAccuracy: metrics.balanced_accuracy || 0,
+      samplesPerSecond: metrics.samples_per_second || 0
+    };
+  });
+
+  const formatHistoricalClientPerformance = (roundData = {}) => {
+    const clientMetrics = roundData.client_metrics || [];
+
+    return clientMetrics.map((metrics, index) => ({
+      clientId: `客户端 ${metrics.client_id ?? index + 1}`,
+      accuracy: metrics.accuracy || 0,
+      loss: metrics.loss || 0,
+      precision: metrics.precision || 0,
+      recall: metrics.recall || 0,
+      f1Score: metrics.f1_score || 0,
+      balancedAccuracy: metrics.balanced_accuracy || 0,
+      samplesPerSecond: metrics.samples_per_second || 0,
+      samples: metrics.num_samples || 0
     }));
   };
 
@@ -236,11 +323,47 @@ const Visualization = () => {
     );
   };
 
+  const historyTableData = chartData.trainingCurves.map(item => ({
+    key: item.round,
+    round: item.round,
+    accuracy: item.accuracy,
+    precision: item.precision,
+    recall: item.recall,
+    f1Score: item.f1Score,
+    balancedAccuracy: item.balancedAccuracy,
+    loss: item.loss,
+    samplesPerSecond: item.samplesPerSecond
+  }));
+
+  const metricColumns = [
+    { title: '轮次', dataIndex: 'round', key: 'round' },
+    { title: '准确率', dataIndex: 'accuracy', key: 'accuracy', render: value => `${((value || 0) * 100).toFixed(2)}%` },
+    { title: 'Precision', dataIndex: 'precision', key: 'precision', render: value => `${((value || 0) * 100).toFixed(2)}%` },
+    { title: 'Recall', dataIndex: 'recall', key: 'recall', render: value => `${((value || 0) * 100).toFixed(2)}%` },
+    { title: 'F1 Score', dataIndex: 'f1Score', key: 'f1Score', render: value => `${((value || 0) * 100).toFixed(2)}%` },
+    { title: 'Balanced Acc', dataIndex: 'balancedAccuracy', key: 'balancedAccuracy', render: value => `${((value || 0) * 100).toFixed(2)}%` },
+    { title: '损失', dataIndex: 'loss', key: 'loss', render: value => typeof value === 'number' ? value.toFixed(4) : '-' },
+    { title: 'Samples/s', dataIndex: 'samplesPerSecond', key: 'samplesPerSecond', render: value => typeof value === 'number' ? value.toFixed(2) : '-' }
+  ];
+
   return (
     <PageContainer>
       <h1>可视化分析</h1>
 
       <Space style={{ marginBottom: 16 }}>
+        <span>训练记录：</span>
+        <Select
+          value={selectedRunId}
+          onChange={setSelectedRunId}
+          style={{ width: 360 }}
+        >
+          <Select.Option value="current">当前训练/最新内存数据</Select.Option>
+          {trainingRuns.map(run => (
+            <Select.Option key={run.id} value={run.id}>
+              {`${run.timestamp ? new Date(run.timestamp).toLocaleString() : '历史记录'} | ${(run.dataset_name || '').toUpperCase()} | ${run.aggregation_algorithm || '-'} | ${((run.final_accuracy || 0) * 100).toFixed(2)}%`}
+            </Select.Option>
+          ))}
+        </Select>
         <span>选择数据集：</span>
         <Select
           value={selectedDataset}
@@ -253,6 +376,35 @@ const Visualization = () => {
         </Select>
         <Button onClick={loadVisualizationData}>刷新数据</Button>
       </Space>
+
+      {selectedRunSummary && (
+        <ChartCard title="历史训练概览">
+          <Row gutter={16}>
+            <Col span={4}>
+              <Statistic title="最终准确率" value={(selectedRunSummary.finalAccuracy || 0) * 100} precision={2} suffix="%" />
+            </Col>
+            <Col span={4}>
+              <Statistic title="最终损失" value={selectedRunSummary.finalLoss || 0} precision={4} />
+            </Col>
+            <Col span={4}>
+              <Statistic title="F1 Score" value={(selectedRunSummary.finalF1Score || 0) * 100} precision={2} suffix="%" />
+            </Col>
+            <Col span={4}>
+              <Statistic title="训练轮次" value={selectedRunSummary.rounds || 0} />
+            </Col>
+            <Col span={4}>
+              <Statistic title="客户端数" value={selectedRunSummary.numClients || 0} />
+            </Col>
+            <Col span={4}>
+              <Space direction="vertical">
+                <span>{(selectedRunSummary.datasetName || '').toUpperCase()} / {selectedRunSummary.modelName || '-'}</span>
+                <span>{selectedRunSummary.algorithm || '-'} / {selectedRunSummary.iid ? 'IID' : 'Non-IID'}</span>
+                <Tag color={selectedRunSummary.status === 'Completed' ? 'green' : selectedRunSummary.status === 'Error' ? 'red' : 'blue'}>{selectedRunSummary.status}</Tag>
+              </Space>
+            </Col>
+          </Row>
+        </ChartCard>
+      )}
 
       <Tabs activeKey={activeTab} onChange={setActiveTab}>
         <Tabs.TabPane
@@ -322,6 +474,14 @@ const Visualization = () => {
               </ChartCard>
             </Col>
           </Row>
+          <ChartCard title="每轮指标明细">
+            <Table
+              columns={metricColumns}
+              dataSource={historyTableData}
+              pagination={{ pageSize: 8 }}
+              scroll={{ x: true }}
+            />
+          </ChartCard>
         </Tabs.TabPane>
 
         <Tabs.TabPane
