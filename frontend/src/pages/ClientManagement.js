@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Table, Tag, Statistic, Row, Col, Space, Button, Progress, Alert, Tabs, Divider } from 'antd';
+import { Card, Table, Tag, Statistic, Row, Col, Space, Button, Progress, Alert, Tabs, Divider, message } from 'antd';
 import { TeamOutlined, MonitorOutlined, WarningOutlined, CheckCircleOutlined, SyncOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import styled from 'styled-components';
@@ -117,9 +117,14 @@ const ClientManagement = () => {
     try {
       const response = await fetch(`http://localhost:5000/api/clients/${clientId}/metrics`);
       const data = await response.json();
-      setSelectedClient({ ...data, client_id: clientId });
+      if (response.ok) {
+        setSelectedClient({ ...data, client_id: clientId });
+        setActiveTab('details');
+      } else {
+        message.error(`获取客户端详情失败: ${data.error || '未知错误'}`);
+      }
     } catch (error) {
-      console.error('获取客户端详情失败', error);
+      message.error('获取客户端详情失败');
     } finally {
       setLoading(false);
     }
@@ -127,16 +132,25 @@ const ClientManagement = () => {
 
   const updateClientStatus = async (clientId, status) => {
     try {
-      await fetch(`http://localhost:5000/api/clients/${clientId}/status`, {
+      const response = await fetch(`http://localhost:5000/api/clients/${clientId}/status`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ status })
       });
-      fetchClientDetails();
+      const data = await response.json();
+      if (response.ok) {
+        message.success(status === 'active' ? '客户端已启用' : '客户端已停用');
+        fetchAllData();
+        if (selectedClient?.client_id === clientId) {
+          setSelectedClient({ ...selectedClient, status });
+        }
+      } else {
+        message.error(`更新客户端状态失败: ${data.error || '未知错误'}`);
+      }
     } catch (error) {
-      console.error('更新客户端状态失败', error);
+      message.error('更新客户端状态失败');
     }
   };
 
@@ -234,14 +248,14 @@ const ClientManagement = () => {
           >
             详情
           </Button>
-          {record.status === 'active' && (
+          {record.status !== 'busy' && (
             <Button
               type="link"
               size="small"
-              danger
-              onClick={() => updateClientStatus(record.client_id, 'inactive')}
+              danger={record.status === 'active'}
+              onClick={() => updateClientStatus(record.client_id, record.status === 'active' ? 'inactive' : 'active')}
             >
-              停用
+              {record.status === 'active' ? '停用' : '启用'}
             </Button>
           )}
         </Space>

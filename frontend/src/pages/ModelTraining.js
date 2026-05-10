@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Card, Button, Select, Input, Table, Tag, message, Divider, Space, Progress, Tabs, Row, Col, Statistic, Form, InputNumber, Switch, Popconfirm } from 'antd';
-import { PlayCircleOutlined, PauseCircleOutlined, StopOutlined, SaveOutlined, LineChartOutlined, DashboardOutlined, SettingOutlined, DeleteOutlined } from '@ant-design/icons';
+import { PlayCircleOutlined, StopOutlined, SaveOutlined, LineChartOutlined, DashboardOutlined, SettingOutlined, DeleteOutlined } from '@ant-design/icons';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { useLocation, useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
@@ -123,9 +123,12 @@ const ModelTraining = () => {
   useEffect(() => {
     if (location.state && location.state.selectedDataset) {
       setSelectedDataset(location.state.selectedDataset);
+      setTrainingConfig(prevConfig => ({ ...prevConfig, dataset_name: location.state.selectedDataset }));
+      form.setFieldsValue({ dataset_name: location.state.selectedDataset });
     }
-  }, [location.state]);
+  }, [location.state, form]);
   const [trainingConfig, setTrainingConfig] = useState({
+    dataset_name: 'mnist',
     num_clients: 10,
     num_rounds: 10,
     client_fraction: 0.5,
@@ -143,7 +146,7 @@ const ModelTraining = () => {
     non_iid_seed: 42,
     model_name: 'cnn'
   });
-  const [trainingStatus, setTrainingStatus] = useState('stopped'); // stopped, running, paused
+  const [trainingStatus, setTrainingStatus] = useState('stopped'); // stopped, running
   const [trainingHistory, setTrainingHistory] = useState([]);
   const [currentRound, setCurrentRound] = useState(0);
   const [metrics, setMetrics] = useState({});
@@ -151,6 +154,7 @@ const ModelTraining = () => {
   const [performanceMetrics, setPerformanceMetrics] = useState([]);
   const [trainingRuns, setTrainingRuns] = useState([]);
   const [savedModels, setSavedModels] = useState([]);
+  const [trainingAction, setTrainingAction] = useState(null);
   const intervalRef = useRef(null);
 
   const startStatusPolling = () => {
@@ -276,9 +280,12 @@ const ModelTraining = () => {
           setModels(data.models);
           setTrainingConfig(prevConfig => {
             const hasSelectedModel = data.models.some(model => model.value === prevConfig.model_name);
+            const modelName = hasSelectedModel ? prevConfig.model_name : data.models[0]?.value || 'cnn';
+            form.setFieldsValue({ dataset_name: selectedDataset, model_name: modelName });
             return {
               ...prevConfig,
-              model_name: hasSelectedModel ? prevConfig.model_name : data.models[0]?.value || 'cnn'
+              dataset_name: selectedDataset,
+              model_name: modelName
             };
           });
         }
@@ -307,6 +314,7 @@ const ModelTraining = () => {
   };
 
   const startTraining = async () => {
+    setTrainingAction('start');
     try {
       const response = await fetch('http://localhost:5000/api/train/start', {
         method: 'POST',
@@ -314,8 +322,8 @@ const ModelTraining = () => {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          dataset_name: selectedDataset,
-          ...trainingConfig
+          ...trainingConfig,
+          dataset_name: selectedDataset
         })
       });
 
@@ -335,10 +343,13 @@ const ModelTraining = () => {
       }
     } catch (error) {
       message.error('训练启动失败，请检查后端连接');
+    } finally {
+      setTrainingAction(null);
     }
   };
 
   const stopTraining = async () => {
+    setTrainingAction('stop');
     try {
       const response = await fetch('http://localhost:5000/api/train/stop', {
         method: 'POST'
@@ -346,16 +357,20 @@ const ModelTraining = () => {
       const data = await response.json();
       if (response.ok) {
         setTrainingStatus('stopped');
+        if (intervalRef.current) clearInterval(intervalRef.current);
         message.info('训练已停止');
       } else {
         message.error(`停止训练失败: ${data.error}`);
       }
     } catch (error) {
       message.error('停止训练失败');
+    } finally {
+      setTrainingAction(null);
     }
   };
 
   const saveModel = async () => {
+    setTrainingAction('save');
     try {
       const response = await fetch('http://localhost:5000/api/train/save', {
         method: 'POST',
@@ -366,15 +381,18 @@ const ModelTraining = () => {
           path: `./checkpoints/${selectedDataset}_model.pth`
         })
       });
+      const data = await response.json();
 
       if (response.ok) {
         message.success('模型保存成功！');
         loadHistory();
       } else {
-        message.error('模型保存失败');
+        message.error(`模型保存失败: ${data.error || '未知错误'}`);
       }
     } catch (error) {
       message.error('模型保存失败');
+    } finally {
+      setTrainingAction(null);
     }
   };
 
@@ -382,9 +400,11 @@ const ModelTraining = () => {
     try {
       const response = await fetch('http://localhost:5000/api/train/status');
       const data = await response.json();
-      if (data.history) {
+      if (response.ok && data.history) {
         setTrainingHistory(data.history);
         message.success('指标已更新');
+      } else {
+        message.error(`指标更新失败: ${data.error || '暂无训练指标'}`);
       }
     } catch (error) {
       console.error('获取指标失败', error);
@@ -613,16 +633,15 @@ const ModelTraining = () => {
             <Col span={8}>
               <TrainingCard title="训练控制">
                 <Space direction="vertical" style={{ width: '100%' }}>
-                  <Button type="primary" icon={<PlayCircleOutlined />} onClick={startTraining} disabled={trainingStatus === 'running'} size="large" block>开始训练</Button>
-                  <Button icon={<PauseCircleOutlined />} onClick={() => setTrainingStatus('paused')} disabled={trainingStatus !== 'running'} size="large" block>暂停训练</Button>
-                  <Button danger icon={<StopOutlined />} onClick={stopTraining} disabled={trainingStatus === 'stopped'} size="large" block>停止训练</Button>
-                  <Button icon={<SaveOutlined />} onClick={saveModel} disabled={trainingStatus !== 'stopped' || currentRound === 0} size="large" block>保存模型</Button>
+                  <Button type="primary" icon={<PlayCircleOutlined />} onClick={startTraining} loading={trainingAction === 'start'} disabled={trainingStatus === 'running' || Boolean(trainingAction)} size="large" block>开始训练</Button>
+                  <Button danger icon={<StopOutlined />} onClick={stopTraining} loading={trainingAction === 'stop'} disabled={trainingStatus === 'stopped' || Boolean(trainingAction)} size="large" block>停止训练</Button>
+                  <Button icon={<SaveOutlined />} onClick={saveModel} loading={trainingAction === 'save'} disabled={trainingStatus !== 'stopped' || currentRound === 0 || Boolean(trainingAction)} size="large" block>保存模型</Button>
                 </Space>
                 <Divider />
                 <div style={{ marginBottom: 8 }}>
                   <StatusIndicator status={trainingStatus} />
                   状态：<Tag color={trainingStatus === 'running' ? 'green' : trainingStatus === 'stopped' ? 'red' : 'orange'}>
-                    {trainingStatus === 'running' ? '训练中' : trainingStatus === 'stopped' ? '已停止' : '已暂停'}
+                    {trainingStatus === 'running' ? '训练中' : '已停止'}
                   </Tag>
                 </div>
                 <div>当前轮次：<strong>{currentRound}</strong> / {trainingConfig.num_rounds}</div>

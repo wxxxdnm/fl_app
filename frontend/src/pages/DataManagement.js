@@ -136,6 +136,8 @@ const DataManagement = () => {
       const data = await response.json();
       if (response.ok) {
         message.success(`数据集 ${selectedDataset} 加载成功`);
+      } else {
+        message.error(`加载数据集失败: ${data.error || '未知错误'}`);
       }
     } catch (error) {
       message.error('加载数据集失败');
@@ -160,6 +162,8 @@ const DataManagement = () => {
       const data = await response.json();
       if (response.ok) {
         message.success(`联邦学习环境设置成功 - ${data.num_clients}个客户端`);
+      } else {
+        message.error(`联邦学习环境设置失败: ${data.error || '未知错误'}`);
       }
     } catch (error) {
       message.error('联邦学习环境设置失败');
