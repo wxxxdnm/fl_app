@@ -38,7 +38,7 @@ const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8', '#82ca9d'
 const Visualization = () => {
   const location = useLocation();
   const [activeTab, setActiveTab] = useState('training');
-  const [selectedRunId, setSelectedRunId] = useState(location.state?.selectedRunId || 'current');
+  const [selectedRunId, setSelectedRunId] = useState(location.state?.selectedRunId || null);
   const [trainingRuns, setTrainingRuns] = useState([]);
   const [selectedRunSummary, setSelectedRunSummary] = useState(null);
   const [chartData, setChartData] = useState({
@@ -50,72 +50,50 @@ const Visualization = () => {
   });
 
   useEffect(() => {
-    loadVisualizationData();
+    loadVisualizationData(selectedRunId);
   }, []);
 
   useEffect(() => {
-    if (selectedRunId === 'current') {
-      loadVisualizationData();
-      return;
-    }
-
+    if (!selectedRunId) return;
     const selectedRun = trainingRuns.find(run => run.id === selectedRunId);
     if (selectedRun) {
       applyHistoricalRun(selectedRun);
     }
-  }, [selectedRunId]);
+  }, [selectedRunId, trainingRuns]);
 
-  const loadVisualizationData = async () => {
+  const loadVisualizationData = async (targetRunId = selectedRunId) => {
     try {
       const dashboardResponse = await fetch('http://localhost:5000/api/main/dashboard_stats');
       if (dashboardResponse.ok) {
         const dashboardData = await dashboardResponse.json();
         const runs = dashboardData.training_runs || [];
         setTrainingRuns(runs);
-        if (selectedRunId !== 'current') {
-          const selectedRun = runs.find(run => run.id === selectedRunId);
-          if (selectedRun) {
-            applyHistoricalRun(selectedRun);
-            return;
-          }
+        const selectedRun = runs.find(run => run.id === targetRunId) || runs[0];
+        if (selectedRun) {
+          setSelectedRunId(selectedRun.id);
+          applyHistoricalRun(selectedRun);
+          return;
         }
       }
-
-      const trainingResponse = await fetch('http://localhost:5000/api/viz/training_curves');
-      if (trainingResponse.ok) {
-        const trainingData = await trainingResponse.json();
-        setChartData(prev => ({ ...prev, trainingCurves: formatTrainingData(trainingData) }));
-      }
-
-      const performanceResponse = await fetch('http://localhost:5000/api/viz/model_performance');
-      if (performanceResponse.ok) {
-        const performanceData = await performanceResponse.json();
-        setChartData(prev => ({ ...prev, clientPerformance: formatPerformanceData(performanceData) }));
-      }
-
-      const distributionResponse = await fetch('http://localhost:5000/api/viz/client_distribution');
-      if (distributionResponse.ok) {
-        const distributionData = await distributionResponse.json();
-        setChartData(prev => ({
-          ...prev,
-          clientDistribution: formatDistributionData(distributionData),
-          distributionStats: formatDistributionStats(distributionData.stats)
-        }));
-      }
-
-      const confusionResponse = await fetch('http://localhost:5000/api/viz/confusion_matrix', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({})
-      });
-      if (confusionResponse.ok) {
-        const confusionData = await confusionResponse.json();
-        setChartData(prev => ({ ...prev, confusionMatrix: formatConfusionMatrixData(confusionData) }));
-      }
-
+      setSelectedRunId(null);
       setSelectedRunSummary(null);
+      setChartData({
+        trainingCurves: [],
+        clientPerformance: [],
+        confusionMatrix: { data: [], classes: [] },
+        clientDistribution: [],
+        distributionStats: []
+      });
     } catch (error) {
       console.error('加载可视化数据失败', error);
+    }
+  };
+
+  const handleRunChange = (runId) => {
+    setSelectedRunId(runId);
+    const selectedRun = trainingRuns.find(run => run.id === runId);
+    if (selectedRun) {
+      applyHistoricalRun(selectedRun);
     }
   };
 
@@ -363,17 +341,16 @@ const Visualization = () => {
         <span>训练记录：</span>
         <Select
           value={selectedRunId}
-          onChange={setSelectedRunId}
+          onChange={handleRunChange}
           style={{ width: 360 }}
         >
-          <Select.Option value="current">当前训练/最新内存数据</Select.Option>
           {trainingRuns.map(run => (
             <Select.Option key={run.id} value={run.id}>
               {`${run.timestamp ? new Date(run.timestamp).toLocaleString() : '历史记录'} | ${(run.dataset_name || '').toUpperCase()} | ${run.aggregation_algorithm || '-'} | ${((run.final_accuracy || 0) * 100).toFixed(2)}%`}
             </Select.Option>
           ))}
         </Select>
-        <Button onClick={loadVisualizationData}>刷新数据</Button>
+        <Button onClick={() => loadVisualizationData(selectedRunId)}>刷新数据</Button>
       </Space>
 
       {selectedRunSummary && (
