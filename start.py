@@ -5,6 +5,7 @@ import platform
 import time
 import threading
 import importlib.util
+import argparse
 
 # --- Configuration ---
 BACKEND_DIR = "backend"
@@ -213,5 +214,4 @@ def main():
         print("所有服务已关闭。")
 
 if __name__ == "__main__":
-    import argparse
     main()

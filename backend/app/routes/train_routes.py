@@ -5,7 +5,7 @@ from ..services.data_manager import DataManager
 from ..services.activity_service import activity_service
 from ..services.history_service import history_service
 from ..services.visualization_service import get_visualization_snapshot
-from .utils import get_json_body
+from .utils import get_json_body, parse_bool
 import torch
 import logging
 
@@ -54,6 +54,11 @@ def add_training_activity(content, activity_type, training_id, training_config, 
         build_training_activity_metadata(training_id, training_config, event, status)
     )
 
+def reset_busy_clients(training_system):
+    for client in getattr(training_system, 'clients', []):
+        if getattr(client, 'status', None) == 'busy':
+            client.status = 'active'
+
 @train_bp.route('/algorithms', methods=['GET'])
 def get_aggregation_algorithms():
     """获取支持的联邦聚合算法"""
@@ -98,14 +103,13 @@ def run_training_loop(num_rounds, client_fraction, num_clients, training_id, tra
                 client.status = 'busy'
 
             # 执行一轮训练
-            round_result = training_system.train_round(selected_clients)
+            try:
+                round_result = training_system.train_round(selected_clients)
+            finally:
+                reset_busy_clients(training_system)
             if training_id != active_training_id:
                 return
             training_history.append(round_result)
-            
-            # 恢复客户端状态为活跃
-            for client in selected_clients:
-                client.status = 'active'
 
             logger.info(f"Round {round_num + 1}/{num_rounds} completed")
             
@@ -160,6 +164,7 @@ def run_training_loop(num_rounds, client_fraction, num_clients, training_id, tra
     except Exception as e:
         if training_id != active_training_id:
             return
+        reset_busy_clients(training_system)
         training_status = "Error"
         training_error = str(e)
         history_service.add_training_run(training_config, training_history, training_status, training_error)
@@ -205,7 +210,10 @@ def start_training():
         except (TypeError, ValueError):
             return jsonify({'error': 'Training numeric parameters are invalid'}), 400
         aggregation_algorithm = data.get('aggregation_algorithm', 'fedavg').lower()
-        iid = data.get('iid', True)
+        try:
+            iid = parse_bool(data.get('iid'), True)
+        except ValueError as error:
+            return jsonify({'error': f'iid {str(error)}'}), 400
         device = data.get('device', 'cuda')
         if num_clients < 1:
             return jsonify({'error': 'num_clients must be at least 1'}), 400
@@ -403,9 +411,12 @@ def stop_training():
     """停止训练"""
     try:
         global training_status, training_stop_requested, active_training_id
+        if training_status != "Running":
+            return jsonify({'error': 'No running training to stop', 'status': training_status}), 400
         training_stop_requested = True
         active_training_id += 1
         training_status = "Stopped"
+        reset_busy_clients(fl_system)
         return jsonify({'message': 'Training stopped', 'status': training_status}), 200
     except Exception as e:
         logger.error(f"Error stopping training: {str(e)}")

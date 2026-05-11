@@ -11,6 +11,7 @@ import torch
 
 logger = logging.getLogger(__name__)
 client_bp = Blueprint('clients', __name__)
+VALID_CLIENT_STATUSES = {'active', 'inactive', 'busy'}
 
 # 存储静态客户端信息（如果没有训练正在运行）
 static_clients = {}
@@ -165,6 +166,9 @@ def update_client_status(client_id):
         status = data.get('status')
         if not status:
             return jsonify({'error': 'status is required'}), 400
+        if status not in VALID_CLIENT_STATUSES:
+            supported = ', '.join(sorted(VALID_CLIENT_STATUSES))
+            return jsonify({'error': f'Unsupported status. Supported: {supported}'}), 400
 
         # 如果训练正在运行，更新 dynamic client
         if train_routes.fl_system is not None:

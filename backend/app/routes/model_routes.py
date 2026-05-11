@@ -4,6 +4,7 @@ from ..services.activity_service import activity_service
 from ..services.history_service import history_service
 from .utils import get_json_body
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 model_bp = Blueprint('model', __name__)
@@ -16,6 +17,9 @@ def get_available_models():
         dataset_name = request.args.get('dataset_name')
         models = model_manager.get_available_models(dataset_name)
         return jsonify({'models': models}), 200
+    except ValueError as e:
+        logger.error(f"Error getting models: {str(e)}")
+        return jsonify({'error': str(e)}), 400
     except Exception as e:
         logger.error(f"Error getting models: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -34,6 +38,9 @@ def create_model(dataset_name):
             'message': f'Model created for {dataset_name}',
             'model_info': summary
         }), 200
+    except ValueError as e:
+        logger.error(f"Error creating model: {str(e)}")
+        return jsonify({'error': str(e)}), 400
     except Exception as e:
         logger.error(f"Error creating model: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -44,14 +51,22 @@ def get_model_config(dataset_name):
     try:
         config = model_manager.get_model_config(dataset_name)
         return jsonify(config), 200
+    except ValueError as e:
+        logger.error(f"Error getting model config: {str(e)}")
+        return jsonify({'error': str(e)}), 400
     except Exception as e:
         logger.error(f"Error getting model config: {str(e)}")
-        return jsonify({'error': str(e)}), 404
+        return jsonify({'error': str(e)}), 500
 
 @model_bp.route('/history', methods=['GET'])
 def get_model_history():
     try:
-        limit = int(request.args.get('limit', 50))
+        try:
+            limit = int(request.args.get('limit', 50))
+        except (TypeError, ValueError):
+            return jsonify({'error': 'limit must be an integer'}), 400
+        if limit < 1:
+            return jsonify({'error': 'limit must be at least 1'}), 400
         return jsonify({'models': history_service.get_model_records(limit)}), 200
     except Exception as e:
         logger.error(f"Error getting model history: {str(e)}")
@@ -81,6 +96,10 @@ def save_model():
         })
         activity_service.add_activity(f"模型已保存至 {path}", "success")
         return jsonify({'message': 'Model saved successfully', 'path': path}), 200
+    except ValueError as e:
+        logger.error(f"Error saving model: {str(e)}")
+        activity_service.add_activity(f"保存模型失败: {str(e)}", "error")
+        return jsonify({'error': str(e)}), 400
     except Exception as e:
         logger.error(f"Error saving model: {str(e)}")
         activity_service.add_activity(f"保存模型失败: {str(e)}", "error")
@@ -94,6 +113,8 @@ def load_model():
         if error_response:
             return error_response
         path = data.get('path', './checkpoints/model.pth')
+        if not os.path.isfile(path):
+            return jsonify({'error': 'Model file not found'}), 404
 
         model = model_manager.load_model(path)
 
@@ -102,6 +123,10 @@ def load_model():
             'message': 'Model loaded successfully',
             'model_class': model.__class__.__name__
         }), 200
+    except ValueError as e:
+        logger.error(f"Error loading model: {str(e)}")
+        activity_service.add_activity(f"加载模型失败: {str(e)}", "error")
+        return jsonify({'error': str(e)}), 400
     except Exception as e:
         logger.error(f"Error loading model: {str(e)}")
         activity_service.add_activity(f"加载模型失败: {str(e)}", "error")

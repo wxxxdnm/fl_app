@@ -2,7 +2,7 @@ from flask import Blueprint, jsonify, request
 from ..services.data_manager import DataManager
 from ..services.activity_service import activity_service
 from ..services.custom_dataset_manager import custom_dataset_manager
-from .utils import get_json_body
+from .utils import get_json_body, parse_bool
 from werkzeug.utils import secure_filename
 import datetime
 import logging
@@ -99,8 +99,10 @@ def upload_dataset_file():
 def delete_uploaded_dataset(filename):
     try:
         safe_filename = secure_filename(filename)
+        if not safe_filename:
+            return jsonify({'error': 'filename is invalid'}), 400
         path = os.path.abspath(os.path.join(UPLOAD_DIR, safe_filename))
-        if not path.startswith(UPLOAD_DIR) or not os.path.exists(path):
+        if os.path.commonpath([UPLOAD_DIR, path]) != UPLOAD_DIR or not os.path.isfile(path):
             return jsonify({'error': 'Uploaded dataset file not found'}), 404
         custom_dataset_manager.unregister_file(safe_filename)
         os.remove(path)
@@ -176,7 +178,10 @@ def setup_federated_data():
             non_iid_seed = int(data.get('non_iid_seed', 42))
         except (TypeError, ValueError):
             return jsonify({'error': 'Federated data numeric parameters are invalid'}), 400
-        iid = data.get('iid', True)
+        try:
+            iid = parse_bool(data.get('iid'), True)
+        except ValueError as error:
+            return jsonify({'error': f'iid {str(error)}'}), 400
         if not dataset_name:
             return jsonify({'error': 'dataset_name is required'}), 400
         if num_clients < 1:
