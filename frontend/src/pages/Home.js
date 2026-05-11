@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Row, Col, Statistic, List, Timeline, Button, Space, Spin, message, Tag, Popconfirm } from 'antd';
+import { Card, Row, Col, Statistic, List, Timeline, Button, Space, Spin, message, Tag, Popconfirm, Pagination } from 'antd';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { DatabaseOutlined, TeamOutlined, LineChartOutlined, PlayCircleOutlined, SettingOutlined, LaptopOutlined, DashboardOutlined, AppstoreOutlined, RightOutlined, SyncOutlined, DeleteOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
@@ -100,9 +100,42 @@ const IconBubble = styled.div`
   background: ${props => props.$background};
 `;
 
+const ModuleActionButton = styled(Button)`
+  min-width: 104px;
+  height: 34px;
+  padding: 0 16px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+
+  &.ant-btn-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 0 16px;
+  }
+`;
+
+const SYSTEM_ACTIVITY_PAGE_SIZE = 5;
+
+const getActivityTimestamp = (activity) => {
+  const timestamp = new Date(activity?.timestamp || 0).getTime();
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+};
+
+const isTrainingProgressActivity = (activity) => {
+  const trainingEvent = activity?.metadata?.training?.event;
+  if (trainingEvent && trainingEvent !== 'start' && trainingEvent !== 'end') {
+    return true;
+  }
+
+  return /^第\s*\d+\s*轮训练完成/.test(activity?.content || '');
+};
+
 const Home = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
+  const [activityPage, setActivityPage] = useState(1);
   const [stats, setStats] = useState({
     total_clients: 0,
     latest_accuracy: 0,
@@ -187,6 +220,16 @@ const Home = () => {
       path: '/visualization'
     }
   ];
+
+  const activities = [...(stats.activities || [])]
+    .filter((activity) => !isTrainingProgressActivity(activity))
+    .sort((a, b) => getActivityTimestamp(b) - getActivityTimestamp(a));
+  const activityTotalPages = Math.max(1, Math.ceil(activities.length / SYSTEM_ACTIVITY_PAGE_SIZE));
+  const currentActivityPage = Math.min(activityPage, activityTotalPages);
+  const paginatedActivities = activities.slice(
+    (currentActivityPage - 1) * SYSTEM_ACTIVITY_PAGE_SIZE,
+    currentActivityPage * SYSTEM_ACTIVITY_PAGE_SIZE
+  );
 
   if (loading) {
     return (
@@ -273,7 +316,9 @@ const Home = () => {
               <IconBubble $color={action.color} $background={action.background}>{action.icon}</IconBubble>
               <h3 style={{ marginTop: 0, marginBottom: 8, fontSize: 20, fontWeight: 800 }}>{action.title}</h3>
               <p style={{ color: 'var(--app-muted)', fontSize: '14px', lineHeight: 1.7, marginBottom: 18 }}>{action.description}</p>
-              <Button type="link" style={{ padding: 0, color: action.color }} icon={<RightOutlined />}>进入模块</Button>
+              <ModuleActionButton type="link" style={{ color: action.color }} icon={<RightOutlined />}>
+                进入模块
+              </ModuleActionButton>
             </QuickActionCard>
           </Col>
         ))}
@@ -351,27 +396,39 @@ const Home = () => {
           </Card>
           <Card title="系统动态">
             <Timeline mode="left">
-              {stats.activities && stats.activities.length > 0 ? (
-                stats.activities.map((activity, index) => (
-                  <Timeline.Item 
-                    key={activity.id} 
-                    color={
-                      activity.type === 'success' ? 'green' : 
-                      activity.type === 'error' ? 'red' : 
-                      activity.type === 'warning' ? 'orange' : 
-                      activity.type === 'process' ? 'blue' : 'gray'
-                    }
-                  >
-                    <div style={{ display: 'flex', flexDirection: 'column' }}>
-                      <span>{activity.content}</span>
-                      <small style={{ color: '#999' }}>{new Date(activity.timestamp).toLocaleString()}</small>
-                    </div>
-                  </Timeline.Item>
+              {activities.length > 0 ? (
+                paginatedActivities.map((activity, index) => (
+                    <Timeline.Item 
+                      key={`${activity.id ?? 'activity'}-${activity.timestamp ?? 'time'}-${index}`} 
+                      color={
+                        activity.type === 'success' ? 'green' : 
+                        activity.type === 'error' ? 'red' : 
+                        activity.type === 'warning' ? 'orange' : 
+                        activity.type === 'process' ? 'blue' : 'gray'
+                      }
+                    >
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <span>{activity.content}</span>
+                        <small style={{ color: '#999' }}>{new Date(activity.timestamp).toLocaleString()}</small>
+                      </div>
+                    </Timeline.Item>
                 ))
               ) : (
                 <Timeline.Item color="gray">暂无系统动态</Timeline.Item>
               )}
             </Timeline>
+            {activities.length > SYSTEM_ACTIVITY_PAGE_SIZE && (
+              <div style={{ display: 'flex', justifyContent: 'center', marginTop: 8 }}>
+                <Pagination
+                  size="small"
+                  current={currentActivityPage}
+                  pageSize={SYSTEM_ACTIVITY_PAGE_SIZE}
+                  total={activities.length}
+                  showSizeChanger={false}
+                  onChange={setActivityPage}
+                />
+              </div>
+            )}
           </Card>
         </Col>
       </Row>

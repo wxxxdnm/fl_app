@@ -24,26 +24,68 @@ training_stop_requested = False
 active_training_id = 0
 training_thread = None
 
+def get_training_activity_subject(training_config):
+    dataset_name = str(training_config.get('dataset_name') or 'unknown').upper()
+    model_name = training_config.get('model_name') or 'model'
+    aggregation_algorithm = training_config.get('aggregation_algorithm') or 'fedavg'
+    return f"{dataset_name} / {model_name} / {aggregation_algorithm}"
+
+def build_training_activity_metadata(training_id, training_config, event, status=None):
+    return {
+        'category': 'training',
+        'training': {
+            'id': training_id,
+            'event': event,
+            'status': status,
+            'dataset_name': training_config.get('dataset_name'),
+            'model_name': training_config.get('model_name'),
+            'aggregation_algorithm': training_config.get('aggregation_algorithm'),
+            'num_clients': training_config.get('num_clients'),
+            'num_rounds': training_config.get('num_rounds'),
+            'client_fraction': training_config.get('client_fraction'),
+            'iid': training_config.get('iid')
+        }
+    }
+
+def add_training_activity(content, activity_type, training_id, training_config, event, status=None):
+    activity_service.add_activity(
+        content,
+        activity_type,
+        build_training_activity_metadata(training_id, training_config, event, status)
+    )
+
 @train_bp.route('/algorithms', methods=['GET'])
 def get_aggregation_algorithms():
     """获取支持的联邦聚合算法"""
     return jsonify({'algorithms': FederatedLearning.get_available_algorithms()}), 200
 
-def run_training_loop(num_rounds, client_fraction, num_clients, training_id, training_system):
+def run_training_loop(num_rounds, client_fraction, num_clients, training_id, training_system, training_config):
     """后台训练循环"""
     global training_status, training_history, training_error
     try:
         training_status = "Running"
-        activity_service.add_activity(
-            f"联邦学习训练开始：算法 {training_system.aggregation_algorithm}，总共 {num_rounds} 轮，参与比例 {client_fraction}",
-            "process"
+        training_subject = get_training_activity_subject(training_config)
+        add_training_activity(
+            f"开始训练模型：{training_subject}",
+            "process",
+            training_id,
+            training_config,
+            "start",
+            "running"
         )
         
         for round_num in range(num_rounds):
             if training_stop_requested or training_id != active_training_id:
                 if training_id == active_training_id:
                     training_status = "Stopped"
-                    activity_service.add_activity("训练已手动停止", "warning")
+                    add_training_activity(
+                        f"模型训练结束：{training_subject}（已停止）",
+                        "warning",
+                        training_id,
+                        training_config,
+                        "end",
+                        "stopped"
+                    )
                 return
 
             # 选择部分客户端参与本轮训练
@@ -67,43 +109,70 @@ def run_training_loop(num_rounds, client_fraction, num_clients, training_id, tra
 
             logger.info(f"Round {round_num + 1}/{num_rounds} completed")
             
-            if (round_num + 1) % 5 == 0 or round_num == 0:
-                activity_service.add_activity(f"第 {round_num + 1} 轮训练完成，准确率: {round_result['global_metrics']['accuracy']*100:.2f}%", "success")
-
             if training_stop_requested:
                 training_status = "Stopped"
-                activity_service.add_activity("训练已手动停止", "warning")
+                add_training_activity(
+                    f"模型训练结束：{training_subject}（已停止）",
+                    "warning",
+                    training_id,
+                    training_config,
+                    "end",
+                    "stopped"
+                )
                 return
 
         # 评估最终模型
         if training_stop_requested or training_id != active_training_id:
             if training_id == active_training_id:
                 training_status = "Stopped"
-                activity_service.add_activity("训练已手动停止", "warning")
+                add_training_activity(
+                    f"模型训练结束：{training_subject}（已停止）",
+                    "warning",
+                    training_id,
+                    training_config,
+                    "end",
+                    "stopped"
+                )
             return
         training_system.evaluate_global_model(training_system.clients)
         training_status = "Completed"
         visualization_snapshot = {}
         try:
-            visualization_snapshot = get_visualization_snapshot(training_system, current_training_config.get('dataset_name'))
+            visualization_snapshot = get_visualization_snapshot(training_system, training_config.get('dataset_name'))
         except Exception as snapshot_error:
             logger.warning(f"Failed to build visualization snapshot: {snapshot_error}")
         history_service.add_training_run(
-            current_training_config,
+            training_config,
             training_history,
             training_status,
             visualization=visualization_snapshot
         )
-        activity_service.add_activity(f"联邦学习训练圆满完成！最终准确率: {training_history[-1]['global_metrics']['accuracy']*100:.2f}%", "success")
+        final_accuracy = training_history[-1]['global_metrics']['accuracy'] * 100 if training_history else 0
+        add_training_activity(
+            f"模型训练完成：{training_subject}，最终准确率: {final_accuracy:.2f}%",
+            "success",
+            training_id,
+            training_config,
+            "end",
+            "completed"
+        )
 
     except Exception as e:
         if training_id != active_training_id:
             return
         training_status = "Error"
         training_error = str(e)
-        history_service.add_training_run(current_training_config, training_history, training_status, training_error)
+        history_service.add_training_run(training_config, training_history, training_status, training_error)
         logger.error(f"Training loop error: {training_error}")
-        activity_service.add_activity(f"训练过程中出现错误: {training_error}", "error")
+        training_subject = get_training_activity_subject(training_config)
+        add_training_activity(
+            f"模型训练结束：{training_subject}（失败：{training_error}）",
+            "error",
+            training_id,
+            training_config,
+            "end",
+            "error"
+        )
 
 @train_bp.route('/start', methods=['POST'])
 def start_training():
@@ -262,7 +331,7 @@ def start_training():
         # 启动后台线程执行训练
         training_thread = threading.Thread(
             target=run_training_loop,
-            args=(num_rounds, client_fraction, num_clients, current_training_id, fl_system),
+            args=(num_rounds, client_fraction, num_clients, current_training_id, fl_system, current_training_config.copy()),
             daemon=True
         )
         training_thread.start()
