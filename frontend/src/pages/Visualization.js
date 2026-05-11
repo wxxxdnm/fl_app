@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { BarChartOutlined, LineChartOutlined, PieChartOutlined, RadarChartOutlined } from '@ant-design/icons';
-import { Button, Card, Col, Row, Select, Space, Statistic, Table, Tabs, Tag } from 'antd';
+import { Button, Card, Col, Empty, Row, Select, Space, Statistic, Table, Tabs, Tag } from 'antd';
 import { useLocation } from 'react-router-dom';
 import {
   Bar,
@@ -128,28 +128,6 @@ const Visualization = () => {
       numClients: run.num_clients,
       iid: run.iid
     });
-  };
-
-  const formatTrainingData = (data) => {
-    const rounds = data.rounds || [];
-    const accuracies = data.global_accuracies || [];
-    const losses = data.global_losses || [];
-    const precisions = data.global_precisions || [];
-    const recalls = data.global_recalls || [];
-    const f1Scores = data.global_f1_scores || [];
-    const balancedAccuracies = data.global_balanced_accuracies || [];
-    const samplesPerSecond = data.global_samples_per_second || [];
-
-    return rounds.map((round, index) => ({
-      round,
-      accuracy: accuracies[index] || 0,
-      loss: losses[index] || 0,
-      precision: precisions[index] || 0,
-      recall: recalls[index] || 0,
-      f1Score: f1Scores[index] || 0,
-      balancedAccuracy: balancedAccuracies[index] || 0,
-      samplesPerSecond: samplesPerSecond[index] || 0
-    }));
   };
 
   const formatHistoricalTrainingData = (history = []) => history.map(item => {
@@ -340,8 +318,10 @@ const Visualization = () => {
       <Space style={{ marginBottom: 16 }}>
         <span>训练记录：</span>
         <Select
-          value={selectedRunId}
+          value={selectedRunId || undefined}
           onChange={handleRunChange}
+          disabled={trainingRuns.length === 0}
+          placeholder="暂无历史训练记录"
           style={{ width: 360 }}
         >
           {trainingRuns.map(run => (
@@ -352,6 +332,12 @@ const Visualization = () => {
         </Select>
         <Button onClick={() => loadVisualizationData(selectedRunId)}>刷新数据</Button>
       </Space>
+
+      {trainingRuns.length === 0 && (
+        <ChartCard>
+          <Empty description="暂无历史训练记录，请先完成一次训练" />
+        </ChartCard>
+      )}
 
       {selectedRunSummary && (
         <ChartCard title="历史训练概览">

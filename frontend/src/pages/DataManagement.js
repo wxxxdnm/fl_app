@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, Button, Select, Table, Tag, message, Divider, Space, Input, Row, Col, Statistic, Form, InputNumber, Switch, Upload, Popconfirm } from 'antd';
 import { UploadOutlined, DatabaseOutlined, PlayCircleOutlined, DeleteOutlined, InfoCircleOutlined, SettingOutlined, TeamOutlined, CloudUploadOutlined, BarChartOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
@@ -28,6 +28,7 @@ const DataManagement = () => {
   const [allDatasetInfos, setAllDatasetInfos] = useState([]);
   const [uploadedFiles, setUploadedFiles] = useState([]);
   const [loading, setLoading] = useState(false);
+  const datasetInfoRequestRef = useRef(0);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -58,12 +59,18 @@ const DataManagement = () => {
   };
 
   const loadDatasetInfo = async () => {
+    const requestId = datasetInfoRequestRef.current + 1;
+    datasetInfoRequestRef.current = requestId;
     try {
       const response = await fetch(`http://localhost:5000/api/data/datasets/${selectedDataset}/info`);
       const data = await response.json();
-      setDatasetInfo(data);
+      if (datasetInfoRequestRef.current === requestId) {
+        setDatasetInfo(data);
+      }
     } catch (error) {
-      message.error('无法获取数据集信息');
+      if (datasetInfoRequestRef.current === requestId) {
+        message.error('无法获取数据集信息');
+      }
     }
   };
 

@@ -270,6 +270,8 @@ const ModelTraining = () => {
     // 当训练历史更新时，自动更新性能指标表格
     if (trainingHistory.length > 0) {
       updatePerformanceMetricsTable(trainingHistory);
+    } else {
+      setPerformanceMetrics([]);
     }
   }, [trainingHistory]);
 
@@ -468,9 +470,9 @@ const ModelTraining = () => {
       { key: '数据集', value: (run.dataset_name || '').toUpperCase() || '-' },
       { key: '模型架构', value: run.model_name || '-' },
       { key: '聚合算法', value: run.aggregation_algorithm || '-' },
-      { key: '数据分布', value: run.iid ? 'IID' : 'Non-IID' },
-      !run.iid ? { key: 'Dirichlet α', value: run.non_iid_alpha ?? '-' } : null,
-      !run.iid ? { key: 'Non-IID随机种子', value: run.non_iid_seed ?? '-' } : null,
+      { key: '数据分布', value: run.iid === true ? 'IID' : run.iid === false ? 'Non-IID' : '-' },
+      run.iid === false ? { key: 'Dirichlet α', value: run.non_iid_alpha ?? '-' } : null,
+      run.iid === false ? { key: 'Non-IID随机种子', value: run.non_iid_seed ?? '-' } : null,
       { key: '客户端数量', value: run.num_clients ?? '-' },
       { key: '计划训练轮次', value: run.num_rounds ?? '-' },
       { key: '实际完成轮次', value: run.rounds ?? '-' },
