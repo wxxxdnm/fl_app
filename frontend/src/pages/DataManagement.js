@@ -20,7 +20,6 @@ const DataManagement = () => {
     num_clients: 10,
     batch_size: 64,
     iid: true,
-    client_fraction: 0.5,
     non_iid_alpha: 0.5,
     non_iid_seed: 42
   });
@@ -44,15 +43,19 @@ const DataManagement = () => {
     try {
       const response = await fetch('http://localhost:5000/api/data/datasets');
       const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || '无法获取数据集列表');
+      }
       const datasets = data.datasets || [];
       setAvailableDatasets(datasets);
       
       // 加载所有数据集的详细信息用于表格展示
       const infos = await Promise.all(datasets.map(async (name) => {
         const resp = await fetch(`http://localhost:5000/api/data/datasets/${name}/info`);
-        return await resp.json();
+        const info = await resp.json();
+        return resp.ok ? info : null;
       }));
-      setAllDatasetInfos(infos);
+      setAllDatasetInfos(infos.filter(Boolean));
     } catch (error) {
       message.error('无法获取数据集列表');
     }
@@ -65,7 +68,12 @@ const DataManagement = () => {
       const response = await fetch(`http://localhost:5000/api/data/datasets/${selectedDataset}/info`);
       const data = await response.json();
       if (datasetInfoRequestRef.current === requestId) {
-        setDatasetInfo(data);
+        if (response.ok) {
+          setDatasetInfo(data);
+        } else {
+          setDatasetInfo(null);
+          message.error(`无法获取数据集信息: ${data.error || '未知错误'}`);
+        }
       }
     } catch (error) {
       if (datasetInfoRequestRef.current === requestId) {
@@ -397,11 +405,6 @@ const DataManagement = () => {
                 </Col>
               </Row>
               <Row gutter={16}>
-                <Col span={12}>
-                  <Form.Item label="客户端参与比例" name="client_fraction">
-                    <InputNumber min={0.1} max={1} step={0.1} style={{ width: '100%' }} />
-                  </Form.Item>
-                </Col>
                 <Col span={12}>
                   <Form.Item label="数据分布" name="iid" valuePropName="checked">
                     <Switch checkedChildren="IID (独立同分布)" unCheckedChildren="Non-IID (非独立同分布)" />

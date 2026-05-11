@@ -317,6 +317,23 @@ const ModelTraining = () => {
     setPerformanceMetrics(formattedMetrics);
   };
 
+  const updatePerformanceMetricsFromMetricsData = (data) => {
+    const rounds = data.rounds || [];
+    const formattedMetrics = rounds.map((round, index) => ({
+      key: round,
+      round,
+      accuracy: formatPercent(data.accuracies?.[index]),
+      precision: formatPercent(data.precisions?.[index]),
+      recall: formatPercent(data.recalls?.[index]),
+      f1_score: formatPercent(data.f1_scores?.[index]),
+      balanced_accuracy: formatPercent(data.balanced_accuracies?.[index]),
+      loss: formatNumber(data.losses?.[index]),
+      samples_per_second: formatNumber(data.samples_per_second?.[index], 2),
+      num_samples: '-'
+    }));
+    setPerformanceMetrics(formattedMetrics);
+  };
+
   const startTraining = async () => {
     setTrainingAction('start');
     try {
@@ -402,13 +419,20 @@ const ModelTraining = () => {
 
   const getMetrics = async () => {
     try {
-      const response = await fetch('http://localhost:5000/api/train/status');
+      const response = await fetch('http://localhost:5000/api/train/metrics');
       const data = await response.json();
-      if (response.ok && data.history) {
-        setTrainingHistory(data.history);
+      if (response.ok && data.rounds) {
+        updatePerformanceMetricsFromMetricsData(data);
         message.success('指标已更新');
       } else {
-        message.error(`指标更新失败: ${data.error || '暂无训练指标'}`);
+        const statusResponse = await fetch('http://localhost:5000/api/train/status');
+        const statusData = await statusResponse.json();
+        if (statusResponse.ok && statusData.history) {
+          setTrainingHistory(statusData.history);
+          message.success('指标已更新');
+        } else {
+          message.error(`指标更新失败: ${data.error || statusData.error || '暂无训练指标'}`);
+        }
       }
     } catch (error) {
       console.error('获取指标失败', error);

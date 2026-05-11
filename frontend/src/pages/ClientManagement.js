@@ -82,7 +82,11 @@ const ClientManagement = () => {
     try {
       const response = await fetch('http://localhost:5000/api/clients/stats');
       const data = await response.json();
-      setStats(data);
+      if (response.ok) {
+        setStats(data);
+      } else {
+        console.error('后端返回错误:', data.error);
+      }
     } catch (error) {
       console.error('获取客户端统计失败', error);
     }
@@ -92,9 +96,13 @@ const ClientManagement = () => {
     try {
       const response = await fetch('http://localhost:5000/api/clients/');
       const data = await response.json();
-      // 将对象转换为数组供 Table 使用
-      const clientArray = Object.values(data.clients || {});
-      setClients(clientArray);
+      if (response.ok) {
+        // 将对象转换为数组供 Table 使用
+        const clientArray = Object.values(data.clients || {});
+        setClients(clientArray);
+      } else {
+        console.error('后端返回错误:', data.error);
+      }
     } catch (error) {
       console.error('获取客户端详情失败', error);
     }

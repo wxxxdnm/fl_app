@@ -97,6 +97,12 @@ const Visualization = () => {
     }
   };
 
+  const formatIidLabel = (iid) => {
+    if (iid === true) return 'IID';
+    if (iid === false) return 'Non-IID';
+    return '-';
+  };
+
   const applyHistoricalRun = (run) => {
     const history = run.history || [];
     const finalRound = history[history.length - 1] || {};
@@ -360,7 +366,7 @@ const Visualization = () => {
             <Col span={4}>
               <Space direction="vertical">
                 <span>{(selectedRunSummary.datasetName || '').toUpperCase()} / {selectedRunSummary.modelName || '-'}</span>
-                <span>{selectedRunSummary.algorithm || '-'} / {selectedRunSummary.iid ? 'IID' : 'Non-IID'}</span>
+                <span>{selectedRunSummary.algorithm || '-'} / {formatIidLabel(selectedRunSummary.iid)}</span>
                 <Tag color={selectedRunSummary.status === 'Completed' ? 'green' : selectedRunSummary.status === 'Error' ? 'red' : 'blue'}>{selectedRunSummary.status}</Tag>
               </Space>
             </Col>
