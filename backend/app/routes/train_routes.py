@@ -200,7 +200,7 @@ def start_training():
             adaptive_beta1 = float(data.get('adaptive_beta1', 0.9))
             adaptive_beta2 = float(data.get('adaptive_beta2', 0.99))
             adaptive_tau = float(data.get('adaptive_tau', 1e-3))
-            non_iid_classes_per_client = int(data.get('non_iid_classes_per_client', 2))
+            non_iid_alpha = float(data.get('non_iid_alpha', 0.5))
             non_iid_seed = int(data.get('non_iid_seed', 42))
         except (TypeError, ValueError):
             return jsonify({'error': 'Training numeric parameters are invalid'}), 400
@@ -225,8 +225,8 @@ def start_training():
             return jsonify({'error': 'adaptive_beta1 and adaptive_beta2 must be in [0, 1)'}), 400
         if adaptive_tau <= 0:
             return jsonify({'error': 'adaptive_tau must be greater than 0'}), 400
-        if non_iid_classes_per_client < 1:
-            return jsonify({'error': 'non_iid_classes_per_client must be at least 1'}), 400
+        if non_iid_alpha <= 0:
+            return jsonify({'error': 'non_iid_alpha must be greater than 0'}), 400
         model_manager = ModelManager()
         try:
             model_config = model_manager.get_model_config(dataset_name)
@@ -236,15 +236,6 @@ def start_training():
         if model_name and model_name not in supported_model_names:
             supported = ', '.join(sorted(supported_model_names))
             return jsonify({'error': f'Unsupported model for {dataset_name}: {model_name}. Supported: {supported}'}), 400
-        if not iid:
-            num_classes = model_config['num_classes']
-            if num_clients * non_iid_classes_per_client < num_classes:
-                return jsonify({
-                    'error': (
-                        'num_clients * non_iid_classes_per_client must cover all dataset classes '
-                        f'({num_clients} * {non_iid_classes_per_client} < {num_classes})'
-                    )
-                }), 400
         if aggregation_algorithm not in FederatedLearning.SUPPORTED_ALGORITHMS:
             supported = ', '.join(sorted(FederatedLearning.SUPPORTED_ALGORITHMS))
             return jsonify({'error': f'Unsupported aggregation_algorithm. Supported: {supported}'}), 400
@@ -275,7 +266,7 @@ def start_training():
             'batch_size': batch_size,
             'aggregation_algorithm': aggregation_algorithm,
             'iid': iid,
-            'non_iid_classes_per_client': non_iid_classes_per_client,
+            'non_iid_alpha': non_iid_alpha,
             'non_iid_seed': non_iid_seed,
             'device': device
         }
@@ -309,7 +300,7 @@ def start_training():
             num_clients=num_clients,
             batch_size=batch_size,
             iid=iid,
-            non_iid_classes_per_client=non_iid_classes_per_client,
+            non_iid_alpha=non_iid_alpha,
             non_iid_seed=non_iid_seed
         )
 

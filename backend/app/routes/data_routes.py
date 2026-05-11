@@ -172,10 +172,10 @@ def setup_federated_data():
         try:
             num_clients = int(data.get('num_clients', 10))
             batch_size = int(data.get('batch_size', 64))
-            non_iid_classes_per_client = int(data.get('non_iid_classes_per_client', 2))
+            non_iid_alpha = float(data.get('non_iid_alpha', 0.5))
             non_iid_seed = int(data.get('non_iid_seed', 42))
         except (TypeError, ValueError):
-            return jsonify({'error': 'num_clients, batch_size and Non-IID parameters must be integers'}), 400
+            return jsonify({'error': 'Federated data numeric parameters are invalid'}), 400
         iid = data.get('iid', True)
         if not dataset_name:
             return jsonify({'error': 'dataset_name is required'}), 400
@@ -183,25 +183,15 @@ def setup_federated_data():
             return jsonify({'error': 'num_clients must be at least 1'}), 400
         if batch_size < 1:
             return jsonify({'error': 'batch_size must be at least 1'}), 400
-        if non_iid_classes_per_client < 1:
-            return jsonify({'error': 'non_iid_classes_per_client must be at least 1'}), 400
-        if not iid:
-            dataset_info = data_manager.get_dataset_info(dataset_name)
-            num_classes = dataset_info['num_classes']
-            if num_clients * non_iid_classes_per_client < num_classes:
-                return jsonify({
-                    'error': (
-                        'num_clients * non_iid_classes_per_client must cover all dataset classes '
-                        f'({num_clients} * {non_iid_classes_per_client} < {num_classes})'
-                    )
-                }), 400
+        if non_iid_alpha <= 0:
+            return jsonify({'error': 'non_iid_alpha must be greater than 0'}), 400
 
         dataloaders = data_manager.create_federated_datasets(
             dataset_name=dataset_name,
             num_clients=num_clients,
             batch_size=batch_size,
             iid=iid,
-            non_iid_classes_per_client=non_iid_classes_per_client,
+            non_iid_alpha=non_iid_alpha,
             non_iid_seed=non_iid_seed
         )
 
@@ -220,7 +210,7 @@ def setup_federated_data():
             'message': 'Federated data setup completed',
             'num_clients': num_clients,
             'iid': iid,
-            'non_iid_classes_per_client': non_iid_classes_per_client,
+            'non_iid_alpha': non_iid_alpha,
             'non_iid_seed': non_iid_seed,
             'clients': client_info
         }), 200

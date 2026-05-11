@@ -143,7 +143,7 @@ const ModelTraining = () => {
     adaptive_beta1: 0.9,
     adaptive_beta2: 0.99,
     adaptive_tau: 0.001,
-    non_iid_classes_per_client: 2,
+    non_iid_alpha: 0.5,
     non_iid_seed: 42,
     model_name: 'cnn'
   });
@@ -588,8 +588,8 @@ const ModelTraining = () => {
                   {!trainingConfig.iid && (
                     <Row gutter={16}>
                       <Col span={12}>
-                        <Form.Item label="每客户端类别数" name="non_iid_classes_per_client">
-                          <InputNumber min={1} max={100} step={1} style={{ width: '100%' }} />
+                        <Form.Item label="Dirichlet α" name="non_iid_alpha">
+                          <InputNumber min={0.01} max={100} step={0.1} style={{ width: '100%' }} />
                         </Form.Item>
                       </Col>
                       <Col span={12}>

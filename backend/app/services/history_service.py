@@ -67,7 +67,7 @@ class HistoryService:
             "client_fraction": config.get("client_fraction"),
             "aggregation_algorithm": config.get("aggregation_algorithm"),
             "iid": config.get("iid"),
-            "non_iid_classes_per_client": config.get("non_iid_classes_per_client"),
+            "non_iid_alpha": config.get("non_iid_alpha"),
             "non_iid_seed": config.get("non_iid_seed"),
             "device": config.get("device"),
             "batch_size": config.get("batch_size"),

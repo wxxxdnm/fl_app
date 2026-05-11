@@ -5,6 +5,7 @@ from .custom_dataset_manager import custom_dataset_manager
 import os
 from typing import Tuple, Dict
 import logging
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -146,7 +147,7 @@ class DataManager:
 
     def create_federated_datasets(self, dataset_name: str, num_clients: int,
                                 batch_size: int = 64, iid: bool = True,
-                                non_iid_classes_per_client: int = 2,
+                                non_iid_alpha: float = 0.5,
                                 non_iid_seed: int = 42) -> Dict[str, DataLoader]:
         """创建联邦学习数据集（IID或非IID）"""
         if dataset_name == 'mnist':
@@ -198,8 +199,8 @@ class DataManager:
             raise ValueError("num_clients must be at least 1")
         if batch_size < 1:
             raise ValueError("batch_size must be at least 1")
-        if non_iid_classes_per_client < 1:
-            raise ValueError("non_iid_classes_per_client must be at least 1")
+        if non_iid_alpha <= 0:
+            raise ValueError("non_iid_alpha must be greater than 0")
 
         # 划分数据给各个客户端
         if iid:
@@ -215,7 +216,7 @@ class DataManager:
             subsets = self._create_non_iid_split(
                 full_dataset,
                 num_clients,
-                non_iid_classes_per_client,
+                non_iid_alpha,
                 non_iid_seed
             )
 
@@ -264,7 +265,7 @@ class DataManager:
         return [int(label) for _, label in dataset]
 
     def _create_non_iid_split(self, dataset, num_clients: int,
-                              classes_per_client: int = 2,
+                              alpha: float = 0.5,
                               seed: int = 42):
         """创建Non-IID数据划分"""
         # 按类别分组
@@ -275,51 +276,40 @@ class DataManager:
                 classes[label] = []
             classes[label].append(idx)
 
-        # 为每个客户端分配特定的类别
-        client_data = [[] for _ in range(num_clients)]
         class_labels = sorted(classes.keys())
-        classes_per_client = max(1, min(classes_per_client, len(class_labels)))
-        generator = torch.Generator().manual_seed(seed)
-        total_class_slots = num_clients * classes_per_client
-        if total_class_slots < len(class_labels):
-            raise ValueError(
-                "num_clients * non_iid_classes_per_client must cover all dataset classes"
-            )
+        rng = np.random.default_rng(seed)
+        min_client_samples = 2
+        if len(dataset) < num_clients * min_client_samples:
+            raise ValueError("num_clients is too large for Non-IID split")
 
-        class_order = torch.randperm(len(class_labels), generator=generator).tolist()
-        shuffled_class_labels = [class_labels[i] for i in class_order]
-        class_to_clients = {label: [] for label in class_labels}
-        for client_id in range(num_clients):
-            class_start = client_id * classes_per_client
-            assigned_classes = [
-                shuffled_class_labels[(class_start + offset) % len(shuffled_class_labels)]
-                for offset in range(classes_per_client)
-            ]
-            for class_label in assigned_classes:
-                class_to_clients[class_label].append(client_id)
+        client_data = [[] for _ in range(num_clients)]
+        for _ in range(20):
+            client_data = [[] for _ in range(num_clients)]
+            for class_label in class_labels:
+                class_indices = np.array(classes[class_label], dtype=np.int64)
+                rng.shuffle(class_indices)
+                proportions = rng.dirichlet(np.full(num_clients, alpha, dtype=float))
+                counts = rng.multinomial(len(class_indices), proportions)
+                split_points = np.cumsum(counts)[:-1]
+                for client_id, split_indices in enumerate(np.split(class_indices, split_points)):
+                    client_data[client_id].extend(split_indices.tolist())
+            if min(len(indices) for indices in client_data) >= min_client_samples:
+                break
 
-        for class_label, assigned_clients in class_to_clients.items():
-            if not assigned_clients:
-                continue
-            class_indices = classes[class_label]
-            shuffled_order = torch.randperm(len(class_indices), generator=generator).tolist()
-            shuffled_indices = [class_indices[i] for i in shuffled_order]
-            base_size = len(shuffled_indices) // len(assigned_clients)
-            remainder = len(shuffled_indices) % len(assigned_clients)
-            start = 0
-            for position, client_id in enumerate(assigned_clients):
-                shard_size = base_size + (1 if position < remainder else 0)
-                end = start + shard_size
-                client_data[client_id].extend(shuffled_indices[start:end])
-                start = end
+        for client_id in sorted(range(num_clients), key=lambda index: len(client_data[index])):
+            while len(client_data[client_id]) < min_client_samples:
+                donor_id = max(range(num_clients), key=lambda index: len(client_data[index]))
+                if len(client_data[donor_id]) <= min_client_samples:
+                    break
+                donor_position = int(rng.integers(len(client_data[donor_id])))
+                client_data[client_id].append(client_data[donor_id].pop(donor_position))
 
         subsets = []
         for indices in client_data:
             if not indices:
                 raise ValueError("Non-IID split produced an empty client dataset")
-            shuffled_order = torch.randperm(len(indices), generator=generator).tolist()
-            shuffled_indices = [indices[i] for i in shuffled_order]
-            subsets.append(Subset(dataset, shuffled_indices))
+            rng.shuffle(indices)
+            subsets.append(Subset(dataset, indices))
         return subsets
 
     def get_dataset_info(self, dataset_name: str) -> Dict:
