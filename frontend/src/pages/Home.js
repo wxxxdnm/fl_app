@@ -243,7 +243,6 @@ const Home = () => {
     <DashboardContainer>
       <HeroSection>
         <HeroContent>
-          <Eyebrow>Federated Learning Studio</Eyebrow>
           <HeroText>
             统一管理数据、客户端和历史记录，快速查看性能、分布与训练进展。
           </HeroText>

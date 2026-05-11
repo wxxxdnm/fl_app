@@ -25,6 +25,13 @@ def get_dataset_class_names(dataset_name):
     except Exception:
         return [str(i) for i in range(10)]
 
+def get_current_dataset_name():
+    if train_routes.fl_system is not None:
+        dataset_name = getattr(train_routes.fl_system, 'dataset_name', None)
+        if dataset_name:
+            return dataset_name
+    return train_routes.current_training_config.get('dataset_name') or 'mnist'
+
 def extract_labels(dataset):
     """Extract labels from regular datasets or nested Subset instances."""
     if isinstance(dataset, Subset):
@@ -235,7 +242,7 @@ def get_confusion_matrix():
         data, error_response = get_json_body()
         if error_response:
             return error_response
-        dataset_name = data.get('dataset_name', 'mnist')
+        dataset_name = data.get('dataset_name') or get_current_dataset_name()
 
         class_names = get_dataset_class_names(dataset_name)
         num_classes = len(class_names)

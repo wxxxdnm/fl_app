@@ -38,7 +38,6 @@ const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8', '#82ca9d'
 const Visualization = () => {
   const location = useLocation();
   const [activeTab, setActiveTab] = useState('training');
-  const [selectedDataset, setSelectedDataset] = useState('mnist');
   const [selectedRunId, setSelectedRunId] = useState(location.state?.selectedRunId || 'current');
   const [trainingRuns, setTrainingRuns] = useState([]);
   const [selectedRunSummary, setSelectedRunSummary] = useState(null);
@@ -107,7 +106,7 @@ const Visualization = () => {
       const confusionResponse = await fetch('http://localhost:5000/api/viz/confusion_matrix', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dataset_name: selectedDataset })
+        body: JSON.stringify({})
       });
       if (confusionResponse.ok) {
         const confusionData = await confusionResponse.json();
@@ -373,16 +372,6 @@ const Visualization = () => {
               {`${run.timestamp ? new Date(run.timestamp).toLocaleString() : '历史记录'} | ${(run.dataset_name || '').toUpperCase()} | ${run.aggregation_algorithm || '-'} | ${((run.final_accuracy || 0) * 100).toFixed(2)}%`}
             </Select.Option>
           ))}
-        </Select>
-        <span>选择数据集：</span>
-        <Select
-          value={selectedDataset}
-          onChange={setSelectedDataset}
-          style={{ width: 150 }}
-        >
-          <Select.Option value="mnist">MNIST</Select.Option>
-          <Select.Option value="cifar10">CIFAR10</Select.Option>
-          <Select.Option value="cifar100">CIFAR100</Select.Option>
         </Select>
         <Button onClick={loadVisualizationData}>刷新数据</Button>
       </Space>
