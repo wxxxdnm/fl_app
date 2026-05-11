@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Card, Button, Select, Input, Table, Tag, message, Divider, Space, Progress, Tabs, Row, Col, Statistic, Form, InputNumber, Switch, Popconfirm } from 'antd';
+import { Card, Button, Select, Input, Table, Tag, message, Divider, Space, Progress, Tabs, Row, Col, Statistic, Form, InputNumber, Switch, Popconfirm, Modal } from 'antd';
 import { PlayCircleOutlined, StopOutlined, SaveOutlined, LineChartOutlined, DashboardOutlined, SettingOutlined, DeleteOutlined } from '@ant-design/icons';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -156,6 +156,7 @@ const ModelTraining = () => {
   const [trainingRuns, setTrainingRuns] = useState([]);
   const [savedModels, setSavedModels] = useState([]);
   const [trainingAction, setTrainingAction] = useState(null);
+  const [selectedHistoryRun, setSelectedHistoryRun] = useState(null);
   const intervalRef = useRef(null);
 
   const startStatusPolling = () => {
@@ -420,6 +421,7 @@ const ModelTraining = () => {
       const data = await response.json();
       if (response.ok) {
         message.success('历史训练记录已删除');
+        setSelectedHistoryRun(prevRun => prevRun?.id === runId ? null : prevRun);
         loadHistory();
       } else {
         message.error(`删除失败: ${data.error}`);
@@ -456,6 +458,38 @@ const ModelTraining = () => {
     key: key.replace(/_/g, ' ').toUpperCase(),
     value: typeof value === 'boolean' ? (value ? '是' : '否') : value
   }));
+
+  const formatHistoryRate = (value) => typeof value === 'number' ? `${(value * 100).toFixed(0)}%` : '-';
+
+  const buildHistoryConfigData = (run) => {
+    if (!run) return [];
+    const rows = [
+      { key: '训练时间', value: run.timestamp ? new Date(run.timestamp).toLocaleString() : '-' },
+      { key: '数据集', value: (run.dataset_name || '').toUpperCase() || '-' },
+      { key: '模型架构', value: run.model_name || '-' },
+      { key: '聚合算法', value: run.aggregation_algorithm || '-' },
+      { key: '数据分布', value: run.iid ? 'IID' : 'Non-IID' },
+      !run.iid ? { key: 'Dirichlet α', value: run.non_iid_alpha ?? '-' } : null,
+      !run.iid ? { key: 'Non-IID随机种子', value: run.non_iid_seed ?? '-' } : null,
+      { key: '客户端数量', value: run.num_clients ?? '-' },
+      { key: '计划训练轮次', value: run.num_rounds ?? '-' },
+      { key: '实际完成轮次', value: run.rounds ?? '-' },
+      { key: '客户端参与比例', value: formatHistoryRate(run.client_fraction) },
+      { key: '批次大小', value: run.batch_size ?? '-' },
+      { key: '训练设备', value: run.device || '-' },
+      { key: '服务端学习率', value: run.server_lr ?? '-' },
+      { key: 'FedAvgM 动量', value: run.server_momentum ?? '-' },
+      { key: 'FedProx μ', value: run.proximal_mu ?? '-' },
+      { key: '自适应 β1', value: run.adaptive_beta1 ?? '-' },
+      { key: '自适应 β2', value: run.adaptive_beta2 ?? '-' },
+      { key: '自适应 τ', value: run.adaptive_tau ?? '-' },
+      { key: '训练状态', value: run.status || '-' },
+      { key: '最终准确率', value: formatPercent(run.final_accuracy) },
+      { key: '最终损失', value: formatNumber(run.final_loss) },
+      { key: '最终 F1 Score', value: formatPercent(run.final_f1_score) }
+    ];
+    return rows.filter(Boolean).map((row, index) => ({ ...row, id: `${row.key}-${index}` }));
+  };
 
   return (
     <PageContainer>
@@ -773,6 +807,13 @@ const ModelTraining = () => {
                           >
                             可视化
                           </Button>
+                          <Button
+                            size="small"
+                            icon={<SettingOutlined />}
+                            onClick={() => setSelectedHistoryRun(record)}
+                          >
+                            配置
+                          </Button>
                           <Popconfirm
                             title="确认删除这条历史训练记录？"
                             okText="删除"
@@ -811,6 +852,21 @@ const ModelTraining = () => {
           </Row>
         </Tabs.TabPane>
       </Tabs>
+      <Modal
+        title="历史训练配置概览"
+        open={Boolean(selectedHistoryRun)}
+        onCancel={() => setSelectedHistoryRun(null)}
+        footer={null}
+        width={760}
+      >
+        <Table
+          columns={configColumns}
+          dataSource={buildHistoryConfigData(selectedHistoryRun)}
+          pagination={false}
+          size="small"
+          rowKey="id"
+        />
+      </Modal>
     </PageContainer>
   );
 };
