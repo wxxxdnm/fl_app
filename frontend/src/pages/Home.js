@@ -6,18 +6,98 @@ import { useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 
 const DashboardContainer = styled.div`
-  padding: 20px;
+  padding: 0;
 `;
 
 const QuickActionCard = styled(Card)`
+  height: 100%;
   cursor: pointer;
-  transition: all 0.3s;
-  border-radius: 8px;
+  border-radius: 28px;
+  transition: transform 0.28s ease, box-shadow 0.28s ease, border-color 0.28s ease;
+
   &:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    border-color: #1890ff;
+    transform: translateY(-6px) scale(1.01);
+    border-color: rgba(0, 113, 227, 0.18);
+    box-shadow: var(--app-shadow);
   }
+`;
+
+const HeroSection = styled.div`
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 28px;
+  padding: 40px 46px;
+  border: 1px solid rgba(255, 255, 255, 0.66);
+  border-radius: 36px;
+  background:
+    radial-gradient(circle at 80% 20%, rgba(0, 113, 227, 0.16), transparent 26%),
+    radial-gradient(circle at 90% 84%, rgba(142, 92, 247, 0.14), transparent 30%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.58));
+  box-shadow: var(--app-shadow);
+  backdrop-filter: blur(28px);
+
+  &::after {
+    content: '';
+    position: absolute;
+    right: -70px;
+    top: -90px;
+    width: 230px;
+    height: 230px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, rgba(0, 113, 227, 0.18), rgba(142, 92, 247, 0.16));
+    filter: blur(4px);
+  }
+
+  @media (max-width: 768px) {
+    padding: 30px 24px;
+  }
+`;
+
+const HeroContent = styled.div`
+  position: relative;
+  z-index: 1;
+  max-width: 620px;
+`;
+
+const Eyebrow = styled.div`
+  margin-bottom: 12px;
+  color: var(--app-blue);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+`;
+
+const HeroText = styled.p`
+  max-width: 540px;
+  margin: 0 0 22px;
+  color: var(--app-muted);
+  font-size: 16px;
+  line-height: 1.65;
+`;
+
+const SectionTitle = styled.h2`
+  margin: 0 0 16px;
+  font-size: 24px;
+  font-weight: 800;
+`;
+
+const StatCard = styled(Card)`
+  height: 100%;
+  background: ${props => props.$tone};
+`;
+
+const IconBubble = styled.div`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 58px;
+  height: 58px;
+  margin-bottom: 18px;
+  border-radius: 20px;
+  color: ${props => props.$color};
+  font-size: 30px;
+  background: ${props => props.$background};
 `;
 
 const Home = () => {
@@ -77,25 +157,33 @@ const Home = () => {
     {
       title: '数据管理',
       description: '上传和管理数据集',
-      icon: <DatabaseOutlined style={{ fontSize: '32px', color: '#1890ff' }} />,
+      icon: <DatabaseOutlined />,
+      color: '#0071e3',
+      background: 'rgba(0, 113, 227, 0.10)',
       path: '/data'
     },
     {
       title: '模型训练',
       description: '启动联邦学习训练',
-      icon: <AppstoreOutlined style={{ fontSize: '32px', color: '#52c41a' }} />,
+      icon: <AppstoreOutlined />,
+      color: '#30d158',
+      background: 'rgba(48, 209, 88, 0.12)',
       path: '/train'
     },
     {
       title: '客户端管理',
       description: '监控客户端状态',
-      icon: <TeamOutlined style={{ fontSize: '32px', color: '#fa8c16' }} />,
+      icon: <TeamOutlined />,
+      color: '#ff9f0a',
+      background: 'rgba(255, 159, 10, 0.12)',
       path: '/clients'
     },
     {
       title: '可视化分析',
       description: '查看训练结果',
-      icon: <LineChartOutlined style={{ fontSize: '32px', color: '#722ed1' }} />,
+      icon: <LineChartOutlined />,
+      color: '#8e5cf7',
+      background: 'rgba(142, 92, 247, 0.12)',
       path: '/visualization'
     }
   ];
@@ -110,77 +198,82 @@ const Home = () => {
 
   return (
     <DashboardContainer>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <h1 style={{ margin: 0 }}>联邦学习平台概览</h1>
-        <Space>
-          <Button icon={<SyncOutlined />} onClick={fetchDashboardStats}>
-            刷新数据
-          </Button>
-          <Button type="primary" icon={<PlayCircleOutlined />} onClick={() => navigate('/train')}>
-            快速开始训练
-          </Button>
-        </Space>
-      </div>
+      <HeroSection>
+        <HeroContent>
+          <Eyebrow>Federated Learning Studio</Eyebrow>
+          <HeroText>
+            统一管理数据、客户端和历史记录，快速查看性能、分布与训练进展。
+          </HeroText>
+          <Space wrap>
+            <Button icon={<SyncOutlined />} onClick={fetchDashboardStats}>
+              刷新数据
+            </Button>
+            <Button type="primary" size="large" icon={<PlayCircleOutlined />} onClick={() => navigate('/train')}>
+              快速开始训练
+            </Button>
+          </Space>
+        </HeroContent>
+      </HeroSection>
 
       {/* 统计卡片 */}
       <Row gutter={16} style={{ marginBottom: 24 }}>
-        <Col span={6}>
-          <Card bordered={false} style={{ background: '#e6f7ff' }}>
+        <Col xs={24} sm={12} lg={6}>
+          <StatCard bordered={false} $tone="linear-gradient(135deg, rgba(232, 242, 255, 0.92), rgba(255, 255, 255, 0.76))">
             <Statistic
               title="总客户端数"
               value={stats.total_clients}
               prefix={<TeamOutlined />}
-              valueStyle={{ color: '#1890ff' }}
+              valueStyle={{ color: 'var(--app-blue)' }}
             />
-          </Card>
+          </StatCard>
         </Col>
-        <Col span={6}>
-          <Card bordered={false} style={{ background: '#f6ffed' }}>
+        <Col xs={24} sm={12} lg={6}>
+          <StatCard bordered={false} $tone="linear-gradient(135deg, rgba(48, 209, 88, 0.13), rgba(255, 255, 255, 0.78))">
             <Statistic
               title="模型准确率"
               value={stats.latest_accuracy}
               precision={1}
               suffix="%"
               prefix={<DashboardOutlined />}
-              valueStyle={{ color: '#52c41a' }}
+              valueStyle={{ color: 'var(--app-green)' }}
             />
-          </Card>
+          </StatCard>
         </Col>
-        <Col span={6}>
-          <Card bordered={false} style={{ background: '#fff7e6' }}>
+        <Col xs={24} sm={12} lg={6}>
+          <StatCard bordered={false} $tone="linear-gradient(135deg, rgba(255, 159, 10, 0.14), rgba(255, 255, 255, 0.78))">
             <Statistic
               title="训练轮次"
               value={stats.total_rounds}
               prefix={<LineChartOutlined />}
-              valueStyle={{ color: '#fa8c16' }}
+              valueStyle={{ color: 'var(--app-orange)' }}
             />
-          </Card>
+          </StatCard>
         </Col>
-        <Col span={6}>
-          <Card bordered={false} style={{ background: '#f9f0ff' }}>
+        <Col xs={24} sm={12} lg={6}>
+          <StatCard bordered={false} $tone="linear-gradient(135deg, rgba(142, 92, 247, 0.13), rgba(255, 255, 255, 0.78))">
             <Statistic
               title="支持数据集"
               value={stats.num_datasets}
               prefix={<DatabaseOutlined />}
-              valueStyle={{ color: '#722ed1' }}
+              valueStyle={{ color: 'var(--app-purple)' }}
             />
-          </Card>
+          </StatCard>
         </Col>
       </Row>
 
       {/* 快速操作 */}
-      <h2 style={{ marginBottom: 16 }}>功能模块</h2>
+      <SectionTitle>功能模块</SectionTitle>
       <Row gutter={16} style={{ marginBottom: 24 }}>
         {quickActions.map((action, index) => (
-          <Col span={6} key={index}>
+          <Col xs={24} sm={12} lg={6} key={index}>
             <QuickActionCard
               onClick={() => navigate(action.path)}
-              bodyStyle={{ textAlign: 'center', padding: '24px 16px' }}
+              bodyStyle={{ minHeight: 218, textAlign: 'left', padding: '28px 24px' }}
             >
-              {action.icon}
-              <h3 style={{ marginTop: 16, marginBottom: 8 }}>{action.title}</h3>
-              <p style={{ color: '#666', fontSize: '14px', marginBottom: 16 }}>{action.description}</p>
-              <Button type="link" icon={<RightOutlined />}>进入模块</Button>
+              <IconBubble $color={action.color} $background={action.background}>{action.icon}</IconBubble>
+              <h3 style={{ marginTop: 0, marginBottom: 8, fontSize: 20, fontWeight: 800 }}>{action.title}</h3>
+              <p style={{ color: 'var(--app-muted)', fontSize: '14px', lineHeight: 1.7, marginBottom: 18 }}>{action.description}</p>
+              <Button type="link" style={{ padding: 0, color: action.color }} icon={<RightOutlined />}>进入模块</Button>
             </QuickActionCard>
           </Col>
         ))}
@@ -188,7 +281,7 @@ const Home = () => {
 
       {/* 训练进度和最近活动 */}
       <Row gutter={16}>
-        <Col span={16}>
+        <Col xs={24} lg={16}>
           <Card title="最近训练趋势" style={{ marginBottom: 16 }}>
             <ResponsiveContainer width="100%" height={300}>
               <LineChart data={stats.training_history.length > 0 ? stats.training_history : [{round: 0, accuracy: 0, loss: 0}]}>
@@ -241,7 +334,7 @@ const Home = () => {
             />
           </Card>
         </Col>
-        <Col span={8}>
+        <Col xs={24} lg={8}>
           <Card title="历史模型" style={{ marginBottom: 16 }}>
             <List
               dataSource={stats.saved_models || []}

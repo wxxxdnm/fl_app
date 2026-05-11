@@ -25,11 +25,12 @@ import {
 import styled from 'styled-components';
 
 const PageContainer = styled.div`
-  padding: 20px;
+  padding: 0;
 `;
 
 const ChartCard = styled(Card)`
-  margin-bottom: 16px;
+  margin-bottom: 20px;
+  border-radius: 28px;
 `;
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8', '#82ca9d', '#ffc658', '#ff7c7c'];

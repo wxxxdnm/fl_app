@@ -5,11 +5,12 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import styled from 'styled-components';
 
 const PageContainer = styled.div`
-  padding: 20px;
+  padding: 0;
 `;
 
 const ClientCard = styled(Card)`
-  margin-bottom: 16px;
+  margin-bottom: 20px;
+  border-radius: 28px;
 `;
 
 const ClientStatus = styled.div`
@@ -19,9 +20,10 @@ const ClientStatus = styled.div`
 `;
 
 const StatusDot = styled.div`
-  width: 8px;
-  height: 8px;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
+  box-shadow: 0 0 0 4px rgba(0, 113, 227, 0.08);
   background-color: ${props => {
     switch(props.status) {
       case 'active': return '#52c41a';

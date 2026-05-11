@@ -6,11 +6,12 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 
 const PageContainer = styled.div`
-  padding: 20px;
+  padding: 0;
 `;
 
 const TrainingCard = styled(Card)`
-  margin-bottom: 16px;
+  margin-bottom: 20px;
+  border-radius: 28px;
 `;
 
 const StatusIndicator = styled.div`
@@ -24,26 +25,26 @@ const StatusIndicator = styled.div`
 
 const AlgorithmDescription = styled.div`
   margin-bottom: 24px;
-  padding: 12px;
-  border: 1px solid #f0f0f0;
-  border-radius: 6px;
-  background: #fafafa;
+  padding: 16px 18px;
+  border: 1px solid rgba(0, 113, 227, 0.10);
+  border-radius: 18px;
+  background: rgba(0, 113, 227, 0.055);
 `;
 
 const AlgorithmTitle = styled.div`
   margin-bottom: 6px;
   font-weight: 600;
-  color: #262626;
+  color: var(--app-text);
 `;
 
 const AlgorithmText = styled.div`
-  color: #595959;
+  color: var(--app-muted);
   line-height: 1.6;
 `;
 
 const AlgorithmMeta = styled.div`
   margin-top: 8px;
-  color: #8c8c8c;
+  color: var(--app-muted);
   font-size: 12px;
   line-height: 1.5;
 `;

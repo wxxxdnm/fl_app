@@ -5,11 +5,12 @@ import { useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 
 const PageContainer = styled.div`
-  padding: 20px;
+  padding: 0;
 `;
 
 const DatasetCard = styled(Card)`
-  margin-bottom: 16px;
+  margin-bottom: 20px;
+  border-radius: 28px;
 `;
 
 const DataManagement = () => {
