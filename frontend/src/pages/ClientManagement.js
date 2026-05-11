@@ -351,7 +351,7 @@ const ClientManagement = () => {
                       <CartesianGrid strokeDasharray="3 3" vertical={false} />
                       <XAxis dataKey="name" />
                       <YAxis />
-                      <Tooltip />
+                      <Tooltip cursor={false} />
                       <Bar dataKey="value" fill="#1890ff">
                         {(performance.participation_distribution || []).map((entry, index) => (
                           <Cell key={`cell-${index}`} fill={['#1890ff', '#52c41a', '#fa8c16', '#722ed1', '#eb2f96'][index % 5]} />
@@ -370,7 +370,7 @@ const ClientManagement = () => {
                       <CartesianGrid strokeDasharray="3 3" vertical={false} />
                       <XAxis dataKey="name" />
                       <YAxis />
-                      <Tooltip />
+                      <Tooltip cursor={false} />
                       <Bar dataKey="value" fill="#52c41a" />
                     </BarChart>
                   </ResponsiveContainer>

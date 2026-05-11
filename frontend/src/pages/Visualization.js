@@ -493,7 +493,7 @@ const Visualization = () => {
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="clientId" angle={-45} textAnchor="end" height={80} />
                 <YAxis domain={[0, 1]} />
-                <Tooltip />
+                <Tooltip cursor={false} />
                 <Legend />
                 <Bar dataKey="accuracy" fill="#52c41a" name="准确率" />
               </BarChart>
@@ -506,7 +506,7 @@ const Visualization = () => {
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="clientId" angle={-45} textAnchor="end" height={80} />
                 <YAxis domain={[0, 1]} />
-                <Tooltip />
+                <Tooltip cursor={false} />
                 <Legend />
                 <Bar dataKey="precision" fill="#1677ff" name="Precision" />
                 <Bar dataKey="recall" fill="#722ed1" name="Recall" />
@@ -522,7 +522,7 @@ const Visualization = () => {
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="clientId" angle={-45} textAnchor="end" height={80} />
                 <YAxis />
-                <Tooltip />
+                <Tooltip cursor={false} />
                 <Legend />
                 <Bar dataKey="samplesPerSecond" fill="#eb2f96" name="Samples/s" />
               </BarChart>
