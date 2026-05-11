@@ -156,6 +156,14 @@ const GlobalStyle = createGlobalStyle`
     background: rgba(0, 113, 227, 0.08);
   }
 
+  .ant-tabs-ink-bar {
+    display: none;
+  }
+
+  .ant-tabs-top > .ant-tabs-nav::before {
+    border-bottom: none;
+  }
+
   .ant-statistic-title {
     color: var(--app-muted);
     font-weight: 600;
