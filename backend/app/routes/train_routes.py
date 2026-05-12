@@ -8,6 +8,8 @@ from ..services.visualization_service import get_visualization_snapshot
 from .utils import get_json_body, parse_bool
 import torch
 import logging
+import os
+import datetime
 
 import threading
 
@@ -151,6 +153,26 @@ def run_training_loop(num_rounds, client_fraction, num_clients, training_id, tra
             training_status,
             visualization=visualization_snapshot
         )
+        try:
+            timestamp_label = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+            dataset_label = training_config.get('dataset_name') or 'dataset'
+            model_label = training_config.get('model_name') or 'model'
+            auto_saved_path = os.path.abspath(
+                os.path.join('.', 'checkpoints', f"{dataset_label}_{model_label}_{timestamp_label}.pth")
+            )
+            training_system.save_model(auto_saved_path)
+            history_service.add_model_record(auto_saved_path, {
+                'dataset_name': training_config.get('dataset_name'),
+                'model_name': training_config.get('model_name'),
+                'model_class': training_system.global_model.__class__.__name__,
+                'rounds': len(training_history),
+                'num_clients': training_config.get('num_clients'),
+                'aggregation_algorithm': training_config.get('aggregation_algorithm'),
+                'auto_saved': True
+            })
+            logger.info(f"Auto-saved trained model to {auto_saved_path}")
+        except Exception as auto_save_error:
+            logger.exception(f"Failed to auto-save model after training: {auto_save_error}")
         final_accuracy = training_history[-1]['global_metrics']['accuracy'] * 100 if training_history else 0
         add_training_activity(
             f"模型训练完成：{training_subject}，最终准确率: {final_accuracy:.2f}%",
@@ -355,7 +377,8 @@ def get_training_status():
             response = {
                 'status': training_status,
                 'current_round': len(history),
-                'history': history
+                'history': history,
+                'model_available': fl_system is not None
             }
             if history:
                 response['latest_metrics'] = history[-1]['global_metrics']
@@ -369,9 +392,10 @@ def get_training_status():
                     'current_round': latest_run.get('rounds', 0),
                     'history': latest_run.get('history', []),
                     'latest_metrics': latest_run.get('history', [{}])[-1].get('global_metrics', {}) if latest_run.get('history') else {},
-                    'aggregation_algorithm': latest_run.get('aggregation_algorithm')
+                    'aggregation_algorithm': latest_run.get('aggregation_algorithm'),
+                    'model_available': False
                 }), 200
-            return jsonify({'status': 'Not started'}), 200
+            return jsonify({'status': 'Not started', 'model_available': False}), 200
 
         history = fl_system.get_training_history()
         
@@ -379,7 +403,8 @@ def get_training_status():
             'status': training_status,
             'current_round': len(history),
             'history': history,
-            'aggregation_algorithm': fl_system.aggregation_algorithm
+            'aggregation_algorithm': fl_system.aggregation_algorithm,
+            'model_available': True
         }
 
         if history:

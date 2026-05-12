@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Card, Button, Select, Input, Table, Tag, message, Divider, Space, Progress, Tabs, Row, Col, Statistic, Form, InputNumber, Switch, Popconfirm, Modal } from 'antd';
+import { Card, Button, Select, Input, Table, Tag, message, Divider, Space, Progress, Tabs, Row, Col, Statistic, Form, InputNumber, Switch, Popconfirm, Modal, Tooltip as AntTooltip } from 'antd';
 import { PlayCircleOutlined, StopOutlined, SaveOutlined, LineChartOutlined, DashboardOutlined, SettingOutlined, DeleteOutlined } from '@ant-design/icons';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -148,6 +148,7 @@ const ModelTraining = () => {
     model_name: 'cnn'
   });
   const [trainingStatus, setTrainingStatus] = useState('stopped'); // stopped, running
+  const [modelAvailable, setModelAvailable] = useState(false);
   const [trainingHistory, setTrainingHistory] = useState([]);
   const [currentRound, setCurrentRound] = useState(0);
   const [metrics, setMetrics] = useState({});
@@ -168,6 +169,7 @@ const ModelTraining = () => {
 
         if (['Running', 'Completed', 'Stopped'].includes(data.status)) {
           setTrainingStatus(data.status === 'Running' ? 'running' : 'stopped');
+          setModelAvailable(Boolean(data.model_available));
           setCurrentRound(data.current_round);
           setTrainingHistory(data.history || []); 
           if (data.latest_metrics) {
@@ -181,12 +183,14 @@ const ModelTraining = () => {
           }
         } else if (data.status === 'Not started') {
           setTrainingStatus('stopped');
+          setModelAvailable(false);
           setCurrentRound(0);
           setTrainingHistory([]);
           setMetrics({});
           clearInterval(intervalRef.current);
         } else if (data.status === 'Error') {
           setTrainingStatus('stopped');
+          setModelAvailable(Boolean(data.model_available));
           message.error(`训练发生错误: ${data.error}`);
           clearInterval(intervalRef.current);
         }
@@ -202,6 +206,7 @@ const ModelTraining = () => {
       try {
         const response = await fetch('http://localhost:5000/api/train/status');
         const data = await response.json();
+        setModelAvailable(Boolean(data.model_available));
         if (data.status === 'Running') {
           setTrainingStatus('running');
           startStatusPolling();
@@ -353,6 +358,7 @@ const ModelTraining = () => {
       if (response.ok) {
         message.success('训练启动成功！');
         setTrainingStatus('running');
+        setModelAvailable(true);
         setCurrentRound(0);
         setTrainingHistory([]); 
         setPerformanceMetrics([]);
@@ -408,6 +414,9 @@ const ModelTraining = () => {
         message.success('模型保存成功！');
         loadHistory();
       } else {
+        if (response.status === 400 && data.error === 'No trained model available') {
+          setModelAvailable(false);
+        }
         message.error(`模型保存失败: ${data.error || '未知错误'}`);
       }
     } catch (error) {
@@ -696,7 +705,9 @@ const ModelTraining = () => {
                 <Space direction="vertical" style={{ width: '100%' }}>
                   <Button type="primary" icon={<PlayCircleOutlined />} onClick={startTraining} loading={trainingAction === 'start'} disabled={trainingStatus === 'running' || Boolean(trainingAction)} size="large" block>开始训练</Button>
                   <Button danger icon={<StopOutlined />} onClick={stopTraining} loading={trainingAction === 'stop'} disabled={trainingStatus === 'stopped' || Boolean(trainingAction)} size="large" block>停止训练</Button>
-                  <Button icon={<SaveOutlined />} onClick={saveModel} loading={trainingAction === 'save'} disabled={trainingStatus !== 'stopped' || currentRound === 0 || Boolean(trainingAction)} size="large" block>保存模型</Button>
+                  <AntTooltip title={trainingStatus === 'stopped' && currentRound > 0 && !modelAvailable ? '后端内存模型不可用（可能是后端进程已重启），请重新训练后再保存。已完成的训练会自动落盘到模型历史中。' : ''}>
+                    <Button icon={<SaveOutlined />} onClick={saveModel} loading={trainingAction === 'save'} disabled={trainingStatus !== 'stopped' || currentRound === 0 || !modelAvailable || Boolean(trainingAction)} size="large" block>保存模型</Button>
+                  </AntTooltip>
                 </Space>
                 <Divider />
                 <div style={{ marginBottom: 8 }}>
