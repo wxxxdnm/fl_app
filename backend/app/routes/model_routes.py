@@ -18,10 +18,10 @@ def get_available_models():
         models = model_manager.get_available_models(dataset_name)
         return jsonify({'models': models}), 200
     except ValueError as e:
-        logger.error(f"Error getting models: {str(e)}")
+        logger.exception(f"Error getting models: {str(e)}")
         return jsonify({'error': str(e)}), 400
     except Exception as e:
-        logger.error(f"Error getting models: {str(e)}")
+        logger.exception(f"Error getting models: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @model_bp.route('/models/<dataset_name>/create', methods=['POST'])
@@ -39,10 +39,10 @@ def create_model(dataset_name):
             'model_info': summary
         }), 200
     except ValueError as e:
-        logger.error(f"Error creating model: {str(e)}")
+        logger.exception(f"Error creating model: {str(e)}")
         return jsonify({'error': str(e)}), 400
     except Exception as e:
-        logger.error(f"Error creating model: {str(e)}")
+        logger.exception(f"Error creating model: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @model_bp.route('/models/<dataset_name>/config', methods=['GET'])
@@ -52,10 +52,10 @@ def get_model_config(dataset_name):
         config = model_manager.get_model_config(dataset_name)
         return jsonify(config), 200
     except ValueError as e:
-        logger.error(f"Error getting model config: {str(e)}")
+        logger.exception(f"Error getting model config: {str(e)}")
         return jsonify({'error': str(e)}), 400
     except Exception as e:
-        logger.error(f"Error getting model config: {str(e)}")
+        logger.exception(f"Error getting model config: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @model_bp.route('/history', methods=['GET'])
@@ -69,7 +69,7 @@ def get_model_history():
             return jsonify({'error': 'limit must be at least 1'}), 400
         return jsonify({'models': history_service.get_model_records(limit)}), 200
     except Exception as e:
-        logger.error(f"Error getting model history: {str(e)}")
+        logger.exception(f"Error getting model history: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @model_bp.route('/models/save', methods=['POST'])
@@ -97,11 +97,11 @@ def save_model():
         activity_service.add_activity(f"模型已保存至 {path}", "success")
         return jsonify({'message': 'Model saved successfully', 'path': path}), 200
     except ValueError as e:
-        logger.error(f"Error saving model: {str(e)}")
+        logger.exception(f"Error saving model: {str(e)}")
         activity_service.add_activity(f"保存模型失败: {str(e)}", "error")
         return jsonify({'error': str(e)}), 400
     except Exception as e:
-        logger.error(f"Error saving model: {str(e)}")
+        logger.exception(f"Error saving model: {str(e)}")
         activity_service.add_activity(f"保存模型失败: {str(e)}", "error")
         return jsonify({'error': str(e)}), 500
 
@@ -124,10 +124,10 @@ def load_model():
             'model_class': model.__class__.__name__
         }), 200
     except ValueError as e:
-        logger.error(f"Error loading model: {str(e)}")
+        logger.exception(f"Error loading model: {str(e)}")
         activity_service.add_activity(f"加载模型失败: {str(e)}", "error")
         return jsonify({'error': str(e)}), 400
     except Exception as e:
-        logger.error(f"Error loading model: {str(e)}")
+        logger.exception(f"Error loading model: {str(e)}")
         activity_service.add_activity(f"加载模型失败: {str(e)}", "error")
         return jsonify({'error': str(e)}), 500

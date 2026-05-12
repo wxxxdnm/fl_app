@@ -2,8 +2,10 @@ from flask import Blueprint, jsonify, send_from_directory
 from . import train_routes, client_routes, data_routes
 from ..services.activity_service import activity_service
 from ..services.history_service import history_service
+import logging
 import os
 
+logger = logging.getLogger(__name__)
 main_bp = Blueprint('main', __name__)
 
 @main_bp.route('/')
@@ -83,6 +85,7 @@ def get_dashboard_stats():
             'activities': recent_activities
         }), 200
     except Exception as e:
+        logger.exception(f"Error getting dashboard stats: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @main_bp.route('/health')

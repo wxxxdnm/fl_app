@@ -179,7 +179,7 @@ def get_training_curves():
         }), 200
 
     except Exception as e:
-        logger.error(f"Error getting training curves: {str(e)}")
+        logger.exception(f"Error getting training curves: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @viz_bp.route('/model_performance', methods=['GET'])
@@ -232,7 +232,7 @@ def get_model_performance():
         return jsonify(performance_data), 200
 
     except Exception as e:
-        logger.error(f"Error getting model performance: {str(e)}")
+        logger.exception(f"Error getting model performance: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @viz_bp.route('/confusion_matrix', methods=['POST'])
@@ -285,7 +285,7 @@ def get_confusion_matrix():
         }), 200
 
     except Exception as e:
-        logger.error(f"Error generating confusion matrix: {str(e)}")
+        logger.exception(f"Error generating confusion matrix: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @viz_bp.route('/client_distribution', methods=['GET'])
@@ -325,6 +325,6 @@ def get_client_distribution():
         }), 200
 
     except Exception as e:
-        logger.error(f"Error getting client distribution: {str(e)}")
+        logger.exception(f"Error getting client distribution: {str(e)}")
         return jsonify({'error': str(e)}), 500
 

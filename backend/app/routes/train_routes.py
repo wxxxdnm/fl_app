@@ -168,7 +168,7 @@ def run_training_loop(num_rounds, client_fraction, num_clients, training_id, tra
         training_status = "Error"
         training_error = str(e)
         history_service.add_training_run(training_config, training_history, training_status, training_error)
-        logger.error(f"Training loop error: {training_error}")
+        logger.exception(f"Training loop error: {training_error}")
         training_subject = get_training_activity_subject(training_config)
         add_training_activity(
             f"模型训练结束：{training_subject}（失败：{training_error}）",
@@ -343,7 +343,7 @@ def start_training():
     except Exception as e:
         training_status = "Error"
         training_error = str(e)
-        logger.error(f"Error starting training: {training_error}")
+        logger.exception(f"Error starting training: {training_error}")
         return jsonify({'error': training_error}), 500
 
 @train_bp.route('/status', methods=['GET'])
@@ -391,7 +391,7 @@ def get_training_status():
         return jsonify(response), 200
 
     except Exception as e:
-        logger.error(f"Error getting training status: {str(e)}")
+        logger.exception(f"Error getting training status: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @train_bp.route('/history/<run_id>', methods=['DELETE'])
@@ -403,7 +403,7 @@ def delete_training_history(run_id):
         activity_service.add_activity("已删除一条历史训练记录", "info")
         return jsonify({'message': 'Training history record deleted'}), 200
     except Exception as e:
-        logger.error(f"Error deleting training history: {str(e)}")
+        logger.exception(f"Error deleting training history: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @train_bp.route('/stop', methods=['POST'])
@@ -419,7 +419,7 @@ def stop_training():
         reset_busy_clients(fl_system)
         return jsonify({'message': 'Training stopped', 'status': training_status}), 200
     except Exception as e:
-        logger.error(f"Error stopping training: {str(e)}")
+        logger.exception(f"Error stopping training: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @train_bp.route('/save', methods=['POST'])
@@ -446,7 +446,7 @@ def save_trained_model():
 
         return jsonify({'message': f'Model saved to {path}'}), 200
     except Exception as e:
-        logger.error(f"Error saving model: {str(e)}")
+        logger.exception(f"Error saving model: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @train_bp.route('/metrics', methods=['GET'])
@@ -499,5 +499,5 @@ def get_metrics():
         return jsonify(metrics_data), 200
 
     except Exception as e:
-        logger.error(f"Error getting metrics: {str(e)}")
+        logger.exception(f"Error getting metrics: {str(e)}")
         return jsonify({'error': str(e)}), 500

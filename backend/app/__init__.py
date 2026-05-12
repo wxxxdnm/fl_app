@@ -1,9 +1,22 @@
-from flask import Flask
+from flask import Flask, jsonify
 from flask_cors import CORS
+from werkzeug.exceptions import HTTPException
+
+from .logging_config import configure_error_logging
 
 def create_app():
     app = Flask(__name__)
     CORS(app)
+    configure_error_logging(app)
+
+    @app.errorhandler(Exception)
+    def handle_unexpected_error(error):
+        if isinstance(error, HTTPException):
+            if error.code and error.code >= 500:
+                app.logger.exception("HTTP exception: %s", error)
+            return jsonify({'error': error.description}), error.code
+        app.logger.exception("Unhandled backend exception")
+        return jsonify({'error': 'Internal server error'}), 500
 
     # 注册蓝图
     from .routes.main_routes import main_bp

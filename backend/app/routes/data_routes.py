@@ -43,7 +43,7 @@ def get_available_datasets():
     try:
         return jsonify({'datasets': get_all_dataset_names()}), 200
     except Exception as e:
-        logger.error(f"Error getting datasets: {str(e)}")
+        logger.exception(f"Error getting datasets: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @data_bp.route('/uploads', methods=['GET'])
@@ -57,7 +57,7 @@ def list_uploaded_datasets():
         files.sort(key=lambda item: item['modified_time'], reverse=True)
         return jsonify({'files': files}), 200
     except Exception as e:
-        logger.error(f"Error listing uploaded datasets: {str(e)}")
+        logger.exception(f"Error listing uploaded datasets: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @data_bp.route('/uploads', methods=['POST'])
@@ -92,7 +92,7 @@ def upload_dataset_file():
             'file': file_record
         }), 201
     except Exception as e:
-        logger.error(f"Error uploading dataset file: {str(e)}")
+        logger.exception(f"Error uploading dataset file: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @data_bp.route('/uploads/<filename>', methods=['DELETE'])
@@ -109,7 +109,7 @@ def delete_uploaded_dataset(filename):
         activity_service.add_activity(f"已删除上传数据集文件 {safe_filename}", "info")
         return jsonify({'message': 'Uploaded dataset file deleted'}), 200
     except Exception as e:
-        logger.error(f"Error deleting uploaded dataset file: {str(e)}")
+        logger.exception(f"Error deleting uploaded dataset file: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @data_bp.route('/datasets/<dataset_name>/info', methods=['GET'])
@@ -119,7 +119,7 @@ def get_dataset_info(dataset_name):
         info = data_manager.get_dataset_info(dataset_name)
         return jsonify(info), 200
     except Exception as e:
-        logger.error(f"Error getting dataset info: {str(e)}")
+        logger.exception(f"Error getting dataset info: {str(e)}")
         return jsonify({'error': str(e)}), 404
 
 @data_bp.route('/datasets/<dataset_name>/load', methods=['POST'])
@@ -160,7 +160,7 @@ def load_dataset(dataset_name):
             'num_batches': len(loader)
         }), 200
     except Exception as e:
-        logger.error(f"Error loading dataset: {str(e)}")
+        logger.exception(f"Error loading dataset: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @data_bp.route('/federated/setup', methods=['POST'])
@@ -220,5 +220,5 @@ def setup_federated_data():
             'clients': client_info
         }), 200
     except Exception as e:
-        logger.error(f"Error setting up federated data: {str(e)}")
+        logger.exception(f"Error setting up federated data: {str(e)}")
         return jsonify({'error': str(e)}), 500

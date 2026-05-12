@@ -140,7 +140,7 @@ def get_all_clients():
             'clients': current_clients
         }), 200
     except Exception as e:
-        logger.error(f"Error getting clients: {str(e)}")
+        logger.exception(f"Error getting clients: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @client_bp.route('/<int:client_id>', methods=['GET'])
@@ -153,7 +153,7 @@ def get_client(client_id):
 
         return jsonify(current_clients[client_id]), 200
     except Exception as e:
-        logger.error(f"Error getting client {client_id}: {str(e)}")
+        logger.exception(f"Error getting client {client_id}: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @client_bp.route('/<int:client_id>/status', methods=['POST'])
@@ -195,7 +195,7 @@ def update_client_status(client_id):
             'message': f'Client {client_id} status updated to {status}'
         }), 200
     except Exception as e:
-        logger.error(f"Error updating client status: {str(e)}")
+        logger.exception(f"Error updating client status: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @client_bp.route('/<int:client_id>/metrics', methods=['GET'])
@@ -230,7 +230,7 @@ def get_client_stats():
             'avg_training_time': avg_training_time
         }), 200
     except Exception as e:
-        logger.error(f"Error getting client stats: {str(e)}")
+        logger.exception(f"Error getting client stats: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @client_bp.route('/performance', methods=['GET'])
@@ -281,5 +281,5 @@ def get_client_performance():
             }
         }), 200
     except Exception as e:
-        logger.error(f"Error getting client performance: {str(e)}")
+        logger.exception(f"Error getting client performance: {str(e)}")
         return jsonify({'error': str(e)}), 500
