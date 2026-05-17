@@ -3,6 +3,7 @@ from torch.utils.data import DataLoader, Subset, random_split
 from torchvision import datasets, transforms
 from .custom_dataset_manager import custom_dataset_manager
 import os
+import shutil
 from typing import Tuple, Dict
 import logging
 import numpy as np
@@ -15,8 +16,14 @@ class DataManager:
             data_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data"))
         self.data_dir = data_dir
         os.makedirs(data_dir, exist_ok=True)
-        self.cifar100_dir = os.path.join(data_dir, "cifar100_cache")
+
+        self.torchvision_cache_dir = os.path.join(data_dir, "torchvision_cache")
+        self.cifar10_dir = os.path.join(self.torchvision_cache_dir, "cifar10")
+        self.cifar100_dir = os.path.join(self.torchvision_cache_dir, "cifar100")
+        os.makedirs(self.cifar10_dir, exist_ok=True)
         os.makedirs(self.cifar100_dir, exist_ok=True)
+        self._stage_dataset_archive("cifar-10-python.tar.gz", self.cifar10_dir)
+        self._stage_dataset_archive("cifar-100-python.tar.gz", self.cifar100_dir)
 
         self.transforms = {
             'mnist': transforms.Compose([
@@ -50,6 +57,26 @@ class DataManager:
 
         self.datasets = {}
         self.dataloaders = {}
+
+    def _stage_dataset_archive(self, archive_name: str, target_dir: str) -> None:
+        target_path = os.path.join(target_dir, archive_name)
+        if os.path.exists(target_path):
+            return
+
+        source_candidates = [
+            os.path.join(self.data_dir, archive_name),
+            os.path.join(self.data_dir, "cifar100_cache", archive_name),
+        ]
+        for source_path in source_candidates:
+            if os.path.abspath(source_path) == os.path.abspath(target_path):
+                continue
+            try:
+                if os.path.isfile(source_path):
+                    shutil.copy2(source_path, target_path)
+                    logger.info("Copied dataset archive to cache: %s", target_path)
+                    return
+            except OSError as exc:
+                logger.warning("Unable to reuse dataset archive %s: %s", source_path, exc)
 
     def load_mnist(self, train: bool = True, batch_size: int = 64) -> DataLoader:
         """加载MNIST数据集"""
@@ -87,7 +114,7 @@ class DataManager:
         """加载CIFAR10数据集"""
         if 'cifar10' not in self.datasets:
             self.datasets['cifar10'] = datasets.CIFAR10(
-                root=self.data_dir,
+                root=self.cifar10_dir,
                 train=True,
                 download=True,
                 transform=self.transforms['cifar10']
@@ -97,7 +124,7 @@ class DataManager:
             dataset = self.datasets['cifar10']
         else:
             dataset = datasets.CIFAR10(
-                root=self.data_dir,
+                root=self.cifar10_dir,
                 train=False,
                 download=True,
                 transform=self.eval_transforms['cifar10']
@@ -165,13 +192,13 @@ class DataManager:
             )
         elif dataset_name == 'cifar10':
             full_dataset = datasets.CIFAR10(
-                root=self.data_dir,
+                root=self.cifar10_dir,
                 train=True,
                 download=True,
                 transform=self.transforms['cifar10']
             )
             eval_dataset = datasets.CIFAR10(
-                root=self.data_dir,
+                root=self.cifar10_dir,
                 train=True,
                 download=True,
                 transform=self.eval_transforms['cifar10']
@@ -325,7 +352,7 @@ class DataManager:
                 'classes': list(range(10))
             }
         elif dataset_name == 'cifar10':
-            dataset = datasets.CIFAR10(root=self.data_dir, train=True, download=True)
+            dataset = datasets.CIFAR10(root=self.cifar10_dir, train=True, download=True)
             return {
                 'id': 'cifar10',
                 'name': 'CIFAR10',
