@@ -1,5 +1,6 @@
 from flask import Blueprint, jsonify, request
 from ..services.federated_learning import FLClient
+from ..services.history_service import history_service
 from . import train_routes
 from .utils import get_json_body
 import logging
@@ -15,6 +16,224 @@ VALID_CLIENT_STATUSES = {'active', 'inactive', 'busy'}
 
 # 存储静态客户端信息（如果没有训练正在运行）
 static_clients = {}
+
+CONTRIBUTION_WEIGHTS = {
+    'sample': 0.35,
+    'participation': 0.25,
+    'performance': 0.25,
+    'efficiency': 0.15
+}
+
+def safe_float(value, default=0.0):
+    try:
+        if value is None:
+            return default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+def normalize_client_id(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return value
+
+def clamp_percent(value):
+    return max(0.0, min(100.0, safe_float(value)))
+
+def get_contribution_level(score):
+    if score >= 70:
+        return 'high'
+    if score >= 40:
+        return 'medium'
+    if score > 0:
+        return 'low'
+    return 'none'
+
+def empty_contribution(client_id):
+    return {
+        'client_id': client_id,
+        'contribution_score': 0.0,
+        'contribution_level': 'none',
+        'contribution_rank': None,
+        'contribution_breakdown': {
+            'sample': 0.0,
+            'participation': 0.0,
+            'performance': 0.0,
+            'efficiency': 0.0
+        },
+        'contribution_raw_metrics': {
+            'total_samples': 0,
+            'participation_rounds': 0,
+            'avg_accuracy': 0.0,
+            'avg_f1_score': 0.0,
+            'avg_samples_per_second': 0.0,
+            'avg_training_time': 0.0
+        }
+    }
+
+def get_contribution_history():
+    """Return current in-memory training history, otherwise latest persisted history."""
+    if train_routes.fl_system is not None:
+        history = train_routes.fl_system.get_training_history()
+        if history:
+            return history, 'current_training'
+
+    latest_run = history_service.get_latest_training_run()
+    history = latest_run.get('history', []) if latest_run else []
+    if history:
+        return history, 'latest_history'
+    return [], 'none'
+
+def build_contribution_summary(contributions, source):
+    if not contributions:
+        return {
+            'source': source,
+            'total_clients': 0,
+            'average_contribution': 0.0,
+            'top_client': None
+        }
+
+    top_client = contributions[0]
+    average_score = sum(item['contribution_score'] for item in contributions) / len(contributions)
+    return {
+        'source': source,
+        'total_clients': len(contributions),
+        'average_contribution': round(average_score, 2),
+        'top_client': {
+            'client_id': top_client['client_id'],
+            'score': top_client['contribution_score'],
+            'level': top_client['contribution_level']
+        }
+    }
+
+def calculate_client_contributions():
+    """Calculate a 0-100 management-oriented contribution score for each client."""
+    history, source = get_contribution_history()
+    if not history:
+        return {}, build_contribution_summary([], source), []
+
+    accumulators = {}
+    for round_data in history:
+        for metrics in round_data.get('client_metrics', []) or []:
+            if not isinstance(metrics, dict) or metrics.get('client_id') is None:
+                continue
+
+            client_id = normalize_client_id(metrics.get('client_id'))
+            accumulator = accumulators.setdefault(client_id, {
+                'client_id': client_id,
+                'total_samples': 0.0,
+                'participation_rounds': 0,
+                'accuracy_sum': 0.0,
+                'f1_sum': 0.0,
+                'throughput_sum': 0.0,
+                'training_time_sum': 0.0
+            })
+            accumulator['total_samples'] += max(0.0, safe_float(metrics.get('num_samples')))
+            accumulator['participation_rounds'] += 1
+            accumulator['accuracy_sum'] += safe_float(metrics.get('accuracy'))
+            accumulator['f1_sum'] += safe_float(metrics.get('f1_score'))
+            accumulator['throughput_sum'] += safe_float(metrics.get('samples_per_second'))
+            accumulator['training_time_sum'] += safe_float(metrics.get('training_time'))
+
+    total_samples = sum(item['total_samples'] for item in accumulators.values())
+    total_rounds = len(history)
+    avg_throughputs = []
+    for item in accumulators.values():
+        rounds = max(1, item['participation_rounds'])
+        avg_throughputs.append(item['throughput_sum'] / rounds)
+    max_avg_throughput = max(avg_throughputs) if avg_throughputs else 0.0
+
+    contributions = []
+    for item in accumulators.values():
+        rounds = max(1, item['participation_rounds'])
+        avg_accuracy = item['accuracy_sum'] / rounds
+        avg_f1_score = item['f1_sum'] / rounds
+        avg_samples_per_second = item['throughput_sum'] / rounds
+        avg_training_time = item['training_time_sum'] / rounds
+
+        sample_score = (item['total_samples'] / total_samples) * 100 if total_samples > 0 else 0.0
+        participation_score = (item['participation_rounds'] / total_rounds) * 100 if total_rounds > 0 else 0.0
+        performance_score = clamp_percent(((avg_accuracy + avg_f1_score) / 2.0) * 100)
+        efficiency_score = (avg_samples_per_second / max_avg_throughput) * 100 if max_avg_throughput > 0 else 0.0
+
+        contribution_score = (
+            sample_score * CONTRIBUTION_WEIGHTS['sample']
+            + participation_score * CONTRIBUTION_WEIGHTS['participation']
+            + performance_score * CONTRIBUTION_WEIGHTS['performance']
+            + efficiency_score * CONTRIBUTION_WEIGHTS['efficiency']
+        )
+
+        contribution = {
+            'client_id': item['client_id'],
+            'contribution_score': round(contribution_score, 2),
+            'contribution_level': get_contribution_level(contribution_score),
+            'contribution_rank': None,
+            'contribution_breakdown': {
+                'sample': round(sample_score, 2),
+                'participation': round(participation_score, 2),
+                'performance': round(performance_score, 2),
+                'efficiency': round(efficiency_score, 2)
+            },
+            'contribution_raw_metrics': {
+                'total_samples': int(item['total_samples']),
+                'participation_rounds': item['participation_rounds'],
+                'avg_accuracy': round(avg_accuracy, 4),
+                'avg_f1_score': round(avg_f1_score, 4),
+                'avg_samples_per_second': round(avg_samples_per_second, 2),
+                'avg_training_time': round(avg_training_time, 2)
+            }
+        }
+        contributions.append(contribution)
+
+    contributions.sort(key=lambda item: item['contribution_score'], reverse=True)
+    for rank, contribution in enumerate(contributions, start=1):
+        contribution['contribution_rank'] = rank
+
+    contribution_map = {
+        normalize_client_id(item['client_id']): item
+        for item in contributions
+    }
+    return contribution_map, build_contribution_summary(contributions, source), contributions
+
+def build_historical_client(contribution):
+    raw_metrics = contribution.get('contribution_raw_metrics', {})
+    return {
+        'client_id': contribution.get('client_id'),
+        'status': 'inactive',
+        'compute_power': 'unknown',
+        'network_speed': 'unknown',
+        'data_quality': 'unknown',
+        'participation_count': raw_metrics.get('participation_rounds', 0),
+        'avg_training_time': raw_metrics.get('avg_training_time', 0),
+        'last_activity': None
+    }
+
+def get_clients_with_contributions():
+    current_clients = get_current_clients()
+    contribution_map, contribution_summary, contribution_list = calculate_client_contributions()
+    enriched_clients = {}
+
+    for client_id, client in current_clients.items():
+        normalized_id = normalize_client_id(client_id)
+        contribution = contribution_map.get(normalized_id, empty_contribution(normalized_id))
+        enriched_clients[normalized_id] = {
+            **client,
+            **contribution,
+            'client_id': normalized_id
+        }
+
+    for contribution in contribution_list:
+        normalized_id = normalize_client_id(contribution.get('client_id'))
+        if normalized_id in enriched_clients:
+            continue
+        enriched_clients[normalized_id] = {
+            **build_historical_client(contribution),
+            **contribution,
+            'client_id': normalized_id
+        }
+
+    return enriched_clients, contribution_summary, contribution_list
 
 def get_gpu_resources():
     """Return GPU availability and memory usage from PyTorch when CUDA is available."""
@@ -134,10 +353,12 @@ def get_current_clients():
 def get_all_clients():
     """获取所有客户端信息"""
     try:
-        current_clients = get_current_clients()
+        current_clients, contribution_summary, contribution_list = get_clients_with_contributions()
         return jsonify({
             'num_clients': len(current_clients),
-            'clients': current_clients
+            'clients': current_clients,
+            'contribution_summary': contribution_summary,
+            'contributions': contribution_list
         }), 200
     except Exception as e:
         logger.exception(f"Error getting clients: {str(e)}")
@@ -147,11 +368,15 @@ def get_all_clients():
 def get_client(client_id):
     """获取特定客户端信息"""
     try:
-        current_clients = get_current_clients()
-        if client_id not in current_clients:
+        current_clients, contribution_summary, _ = get_clients_with_contributions()
+        normalized_id = normalize_client_id(client_id)
+        if normalized_id not in current_clients:
             return jsonify({'error': f'Client {client_id} not found'}), 404
 
-        return jsonify(current_clients[client_id]), 200
+        return jsonify({
+            **current_clients[normalized_id],
+            'contribution_summary': contribution_summary
+        }), 200
     except Exception as e:
         logger.exception(f"Error getting client {client_id}: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -207,7 +432,7 @@ def get_client_metrics(client_id):
 def get_client_stats():
     """获取客户端统计信息"""
     try:
-        current_clients = get_current_clients()
+        current_clients, contribution_summary, _ = get_clients_with_contributions()
         total_clients = len(current_clients)
         active_clients = sum(1 for c in current_clients.values() if c.get('status') == 'active')
         busy_clients = sum(1 for c in current_clients.values() if c.get('status') == 'busy')
@@ -227,17 +452,31 @@ def get_client_stats():
             'busy_clients': busy_clients,
             'inactive_clients': inactive_clients,
             'avg_participation': avg_participation,
-            'avg_training_time': avg_training_time
+            'avg_training_time': avg_training_time,
+            'contribution_summary': contribution_summary
         }), 200
     except Exception as e:
         logger.exception(f"Error getting client stats: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@client_bp.route('/contributions', methods=['GET'])
+def get_client_contributions():
+    """获取客户端贡献度分析数据"""
+    try:
+        _, contribution_summary, contribution_list = get_clients_with_contributions()
+        return jsonify({
+            'contribution_summary': contribution_summary,
+            'contributions': contribution_list
+        }), 200
+    except Exception as e:
+        logger.exception(f"Error getting client contributions: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @client_bp.route('/performance', methods=['GET'])
 def get_client_performance():
     """获取客户端性能监控数据"""
     try:
-        current_clients = get_current_clients()
+        current_clients, contribution_summary, contribution_list = get_clients_with_contributions()
         
         # 1. 参与度分布 (Participation Distribution)
         participation_data = []
@@ -270,6 +509,8 @@ def get_client_performance():
         return jsonify({
             'participation_distribution': participation_data,
             'training_time_stats': training_time_data,
+            'contribution_summary': contribution_summary,
+            'contribution_ranking': contribution_list,
             'system_resources': {
                 'cpu': cpu_usage,
                 'memory': mem_usage,

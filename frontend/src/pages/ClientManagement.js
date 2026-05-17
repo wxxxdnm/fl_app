@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Table, Tag, Statistic, Row, Col, Space, Button, Progress, Alert, Tabs, Divider, message } from 'antd';
-import { TeamOutlined, MonitorOutlined, WarningOutlined, CheckCircleOutlined, SyncOutlined, InfoCircleOutlined } from '@ant-design/icons';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { Card, Table, Tag, Statistic, Row, Col, Space, Button, Progress, Tabs, Divider, message, Empty } from 'antd';
+import { TeamOutlined, MonitorOutlined, WarningOutlined, CheckCircleOutlined, SyncOutlined, InfoCircleOutlined, TrophyOutlined } from '@ant-design/icons';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, Legend } from 'recharts';
 import styled from 'styled-components';
 
 const PageContainer = styled.div`
@@ -34,6 +34,13 @@ const StatusDot = styled.div`
   }};
 `;
 
+const DEFAULT_CONTRIBUTION_SUMMARY = {
+  source: 'none',
+  total_clients: 0,
+  average_contribution: 0,
+  top_client: null
+};
+
 const ClientManagement = () => {
   const [clients, setClients] = useState([]);
   const [stats, setStats] = useState({
@@ -60,8 +67,12 @@ const ClientManagement = () => {
       gpu_memory: 0,
       latency: 0,
       bandwidth: 0
-    }
+    },
+    contribution_summary: DEFAULT_CONTRIBUTION_SUMMARY,
+    contribution_ranking: []
   });
+  const [contributionSummary, setContributionSummary] = useState(DEFAULT_CONTRIBUTION_SUMMARY);
+  const [contributions, setContributions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
   const [selectedClient, setSelectedClient] = useState(null);
@@ -84,6 +95,7 @@ const ClientManagement = () => {
       const data = await response.json();
       if (response.ok) {
         setStats(data);
+        setContributionSummary(data.contribution_summary || DEFAULT_CONTRIBUTION_SUMMARY);
       } else {
         console.error('后端返回错误:', data.error);
       }
@@ -100,6 +112,8 @@ const ClientManagement = () => {
         // 将对象转换为数组供 Table 使用
         const clientArray = Object.values(data.clients || {});
         setClients(clientArray);
+        setContributionSummary(data.contribution_summary || DEFAULT_CONTRIBUTION_SUMMARY);
+        setContributions(data.contributions || []);
       } else {
         console.error('后端返回错误:', data.error);
       }
@@ -114,6 +128,8 @@ const ClientManagement = () => {
       const data = await response.json();
       if (response.ok) {
         setPerformance(data);
+        setContributionSummary(data.contribution_summary || DEFAULT_CONTRIBUTION_SUMMARY);
+        setContributions(data.contribution_ranking || []);
       } else {
         console.error('后端返回错误:', data.error);
       }
@@ -164,6 +180,51 @@ const ClientManagement = () => {
     }
   };
 
+  const getContributionColor = (level, score = 0) => {
+    if (level === 'high' || score >= 70) return '#52c41a';
+    if (level === 'medium' || score >= 40) return '#fa8c16';
+    if (level === 'low' || score > 0) return '#1890ff';
+    return '#d9d9d9';
+  };
+
+  const getContributionLabel = (level) => {
+    if (level === 'high') return '高贡献';
+    if (level === 'medium') return '中贡献';
+    if (level === 'low') return '低贡献';
+    return '暂无贡献';
+  };
+
+  const getSourceLabel = (source) => {
+    if (source === 'current_training') return '当前训练';
+    if (source === 'latest_history') return '最近历史';
+    return '暂无数据';
+  };
+
+  const formatUnknown = (value, map = {}) => {
+    if (value === null || value === undefined || value === '' || value === 'unknown') return '未知';
+    return map[value] || value;
+  };
+
+  const formatDateTime = (value) => {
+    if (!value) return '暂无记录';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '暂无记录';
+    return date.toLocaleString();
+  };
+
+  const contributionSource = performance.contribution_ranking?.length
+    ? performance.contribution_ranking
+    : contributions;
+
+  const contributionChartData = (contributionSource || []).map(item => ({
+    name: `Client ${item.client_id}`,
+    score: item.contribution_score || 0,
+    sample: item.contribution_breakdown?.sample || 0,
+    participation: item.contribution_breakdown?.participation || 0,
+    performance: item.contribution_breakdown?.performance || 0,
+    efficiency: item.contribution_breakdown?.efficiency || 0
+  }));
+
   const clientColumns = [
     {
       title: '客户端ID',
@@ -196,10 +257,10 @@ const ClientManagement = () => {
       render: (power) => (
         <Tag color={
           power === 'high' ? 'green' :
-          power === 'medium' ? 'orange' : 'red'
+          power === 'medium' ? 'orange' :
+          power === 'low' ? 'red' : 'default'
         }>
-          {power === 'high' ? '高' :
-           power === 'medium' ? '中' : '低'}
+          {formatUnknown(power, { high: '高', medium: '中', low: '低' })}
         </Tag>
       ),
       width: '12%'
@@ -208,28 +269,32 @@ const ClientManagement = () => {
       title: '网络状况',
       dataIndex: 'network_speed',
       key: 'network_speed',
-      render: (speed) => (
-        <Progress
-          percent={speed === 'excellent' ? 100 : speed === 'good' ? 70 : 40}
-          size="small"
-          status={speed === 'excellent' ? 'success' : speed === 'good' ? 'normal' : 'exception'}
-          showInfo={false}
-        />
-      ),
+      render: (speed) => speed === 'unknown'
+        ? <Tag>未知</Tag>
+        : (
+          <Progress
+            percent={speed === 'excellent' ? 100 : speed === 'good' ? 70 : 40}
+            size="small"
+            status={speed === 'excellent' ? 'success' : speed === 'good' ? 'normal' : 'exception'}
+            showInfo={false}
+          />
+        ),
       width: '15%'
     },
     {
       title: '数据质量',
       dataIndex: 'data_quality',
       key: 'data_quality',
-      render: (quality) => (
-        <Progress
-          percent={quality === 'high' ? 90 : quality === 'medium' ? 60 : 30}
-          size="small"
-          strokeColor={quality === 'high' ? '#52c41a' : quality === 'medium' ? '#fa8c16' : '#ff4d4f'}
-          showInfo={false}
-        />
-      ),
+      render: (quality) => quality === 'unknown'
+        ? <Tag>未知</Tag>
+        : (
+          <Progress
+            percent={quality === 'high' ? 90 : quality === 'medium' ? 60 : 30}
+            size="small"
+            strokeColor={quality === 'high' ? '#52c41a' : quality === 'medium' ? '#fa8c16' : '#ff4d4f'}
+            showInfo={false}
+          />
+        ),
       width: '15%'
     },
     {
@@ -238,6 +303,30 @@ const ClientManagement = () => {
       key: 'participation_count',
       sorter: (a, b) => a.participation_count - b.participation_count,
       width: '12%'
+    },
+    {
+      title: '贡献度',
+      dataIndex: 'contribution_score',
+      key: 'contribution_score',
+      sorter: (a, b) => (a.contribution_score || 0) - (b.contribution_score || 0),
+      render: (score = 0, record) => (
+        <Space direction="vertical" size={2} style={{ width: '100%' }}>
+          <Space size={8}>
+            <strong>{Number(score || 0).toFixed(2)}</strong>
+            {record.contribution_rank && <Tag color="blue">#{record.contribution_rank}</Tag>}
+            <Tag color={record.contribution_level === 'high' ? 'green' : record.contribution_level === 'medium' ? 'orange' : record.contribution_level === 'low' ? 'blue' : 'default'}>
+              {getContributionLabel(record.contribution_level)}
+            </Tag>
+          </Space>
+          <Progress
+            percent={score || 0}
+            size="small"
+            strokeColor={getContributionColor(record.contribution_level, score)}
+            showInfo={false}
+          />
+        </Space>
+      ),
+      width: '18%'
     },
     {
       title: '平均训练时间',
@@ -332,6 +421,53 @@ const ClientManagement = () => {
             </Col>
           </Row>
 
+          <Row gutter={16} style={{ marginBottom: 24 }}>
+            <Col span={8}>
+              <ClientCard>
+                <Statistic
+                  title="平均贡献度"
+                  value={contributionSummary.average_contribution || 0}
+                  precision={2}
+                  suffix="/100"
+                  valueStyle={{ color: '#1890ff' }}
+                  prefix={<TrophyOutlined />}
+                />
+                <Progress
+                  percent={contributionSummary.average_contribution || 0}
+                  showInfo={false}
+                  strokeColor="#1890ff"
+                  style={{ marginTop: 8 }}
+                />
+              </ClientCard>
+            </Col>
+            <Col span={8}>
+              <ClientCard>
+                <Statistic
+                  title="最高贡献客户端"
+                  value={contributionSummary.top_client ? `Client ${contributionSummary.top_client.client_id}` : '暂无'}
+                  valueStyle={{ color: '#52c41a' }}
+                />
+                <div style={{ marginTop: 8, color: '#6e6e73' }}>
+                  {contributionSummary.top_client
+                    ? `贡献度 ${Number(contributionSummary.top_client.score || 0).toFixed(2)} / 100`
+                    : '完成训练后将自动生成排行'}
+                </div>
+              </ClientCard>
+            </Col>
+            <Col span={8}>
+              <ClientCard>
+                <Statistic
+                  title="贡献度数据源"
+                  value={getSourceLabel(contributionSummary.source)}
+                  valueStyle={{ color: contributionSummary.source === 'none' ? '#8c8c8c' : '#722ed1' }}
+                />
+                <div style={{ marginTop: 8, color: '#6e6e73' }}>
+                  覆盖 {contributionSummary.total_clients || 0} 个客户端
+                </div>
+              </ClientCard>
+            </Col>
+          </Row>
+
           {/* 客户端列表 */}
           <ClientCard title="客户端列表">
             <Table
@@ -344,12 +480,35 @@ const ClientManagement = () => {
                 showSizeChanger: true,
                 showQuickJumper: true
               }}
-              scroll={{ x: 1200 }}
+              scroll={{ x: 1450 }}
             />
           </ClientCard>
         </Tabs.TabPane>
 
         <Tabs.TabPane tab={<span><MonitorOutlined />性能监控</span>} key="monitoring">
+          <ClientCard title="客户端贡献度排行">
+            {contributionChartData.length > 0 ? (
+              <div style={{ height: 360 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={contributionChartData}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="name" />
+                    <YAxis domain={[0, 100]} />
+                    <Tooltip cursor={false} formatter={(value) => Number(value || 0).toFixed(2)} />
+                    <Legend />
+                    <Bar dataKey="score" name="综合贡献度" fill="#1890ff" />
+                    <Bar dataKey="sample" name="样本贡献" fill="#52c41a" />
+                    <Bar dataKey="participation" name="参与贡献" fill="#fa8c16" />
+                    <Bar dataKey="performance" name="表现贡献" fill="#722ed1" />
+                    <Bar dataKey="efficiency" name="效率贡献" fill="#13c2c2" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <Empty description="暂无贡献度数据，请先完成一次训练" />
+            )}
+          </ClientCard>
+
           <Row gutter={16}>
             <Col span={12}>
               <ClientCard title="客户端参与度分布">
@@ -480,14 +639,14 @@ const ClientManagement = () => {
                 <Col span={8}>
                   <Statistic
                     title="状态"
-                    value={selectedClient.status}
+                    value={formatUnknown(selectedClient.status, { active: '活跃', busy: '忙碌', inactive: '离线' })}
                     valueStyle={{ color: selectedClient.status === 'active' ? '#52c41a' : '#ff4d4f' }}
                   />
                 </Col>
                 <Col span={8}>
                   <Statistic
                     title="计算能力"
-                    value={selectedClient.compute_power}
+                    value={formatUnknown(selectedClient.compute_power, { high: '高', medium: '中', low: '低' })}
                     valueStyle={{ color: '#1890ff' }}
                   />
                 </Col>
@@ -500,10 +659,66 @@ const ClientManagement = () => {
                 </Col>
               </Row>
               <Divider />
-              <p><strong>网络状况：</strong>{selectedClient.network_speed}</p>
-              <p><strong>数据质量：</strong>{selectedClient.data_quality}</p>
+              <Row gutter={16}>
+                <Col span={8}>
+                  <Statistic
+                    title="贡献度"
+                    value={selectedClient.contribution_score || 0}
+                    precision={2}
+                    suffix="/100"
+                    valueStyle={{ color: getContributionColor(selectedClient.contribution_level, selectedClient.contribution_score) }}
+                    prefix={<TrophyOutlined />}
+                  />
+                  <Progress
+                    percent={selectedClient.contribution_score || 0}
+                    strokeColor={getContributionColor(selectedClient.contribution_level, selectedClient.contribution_score)}
+                    showInfo={false}
+                    style={{ marginTop: 8 }}
+                  />
+                </Col>
+                <Col span={8}>
+                  <Statistic
+                    title="贡献排名"
+                    value={selectedClient.contribution_rank ? `#${selectedClient.contribution_rank}` : '暂无'}
+                    valueStyle={{ color: '#722ed1' }}
+                  />
+                </Col>
+                <Col span={8}>
+                  <Statistic
+                    title="贡献等级"
+                    value={getContributionLabel(selectedClient.contribution_level)}
+                    valueStyle={{ color: getContributionColor(selectedClient.contribution_level, selectedClient.contribution_score) }}
+                  />
+                </Col>
+              </Row>
+              <Divider />
+              <Row gutter={[16, 16]}>
+                <Col span={6}>
+                  <Statistic title="样本贡献" value={selectedClient.contribution_breakdown?.sample || 0} precision={2} suffix="%" />
+                  <Progress percent={selectedClient.contribution_breakdown?.sample || 0} showInfo={false} size="small" strokeColor="#52c41a" />
+                </Col>
+                <Col span={6}>
+                  <Statistic title="参与贡献" value={selectedClient.contribution_breakdown?.participation || 0} precision={2} suffix="%" />
+                  <Progress percent={selectedClient.contribution_breakdown?.participation || 0} showInfo={false} size="small" strokeColor="#fa8c16" />
+                </Col>
+                <Col span={6}>
+                  <Statistic title="表现贡献" value={selectedClient.contribution_breakdown?.performance || 0} precision={2} suffix="%" />
+                  <Progress percent={selectedClient.contribution_breakdown?.performance || 0} showInfo={false} size="small" strokeColor="#722ed1" />
+                </Col>
+                <Col span={6}>
+                  <Statistic title="效率贡献" value={selectedClient.contribution_breakdown?.efficiency || 0} precision={2} suffix="%" />
+                  <Progress percent={selectedClient.contribution_breakdown?.efficiency || 0} showInfo={false} size="small" strokeColor="#13c2c2" />
+                </Col>
+              </Row>
+              <Divider />
+              <p><strong>网络状况：</strong>{formatUnknown(selectedClient.network_speed, { excellent: '优秀', good: '良好', poor: '较差' })}</p>
+              <p><strong>数据质量：</strong>{formatUnknown(selectedClient.data_quality, { high: '高', medium: '中', low: '低' })}</p>
               <p><strong>平均训练时间：</strong>{selectedClient.avg_training_time}s</p>
-              <p><strong>最后活动：</strong>{new Date(selectedClient.last_activity).toLocaleString()}</p>
+              <p><strong>累计样本数：</strong>{selectedClient.contribution_raw_metrics?.total_samples || 0}</p>
+              <p><strong>平均准确率：</strong>{((selectedClient.contribution_raw_metrics?.avg_accuracy || 0) * 100).toFixed(2)}%</p>
+              <p><strong>平均 F1：</strong>{((selectedClient.contribution_raw_metrics?.avg_f1_score || 0) * 100).toFixed(2)}%</p>
+              <p><strong>平均吞吐量：</strong>{Number(selectedClient.contribution_raw_metrics?.avg_samples_per_second || 0).toFixed(2)} samples/s</p>
+              <p><strong>最后活动：</strong>{formatDateTime(selectedClient.last_activity)}</p>
             </ClientCard>
           </Tabs.TabPane>
         )}

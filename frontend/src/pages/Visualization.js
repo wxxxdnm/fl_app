@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { BarChartOutlined, LineChartOutlined, PieChartOutlined, RadarChartOutlined } from '@ant-design/icons';
-import { Button, Card, Col, Empty, Row, Select, Space, Statistic, Table, Tabs, Tag } from 'antd';
+import { Button, Card, Col, Empty, Pagination, Row, Select, Space, Statistic, Table, Tabs, Tag } from 'antd';
 import { useLocation } from 'react-router-dom';
 import {
   Bar,
@@ -10,8 +10,6 @@ import {
   Legend,
   Line,
   LineChart,
-  Pie,
-  PieChart,
   PolarAngleAxis,
   PolarGrid,
   PolarRadiusAxis,
@@ -33,7 +31,16 @@ const ChartCard = styled(Card)`
   border-radius: 28px;
 `;
 
-const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8', '#82ca9d', '#ffc658', '#ff7c7c'];
+const CLIENT_CHART_MIN_WIDTH = 900;
+const CLIENT_BAR_WIDTH = 58;
+const DISTRIBUTION_PAGE_SIZE = 6;
+
+const CONTRIBUTION_WEIGHTS = {
+  sample: 0.35,
+  participation: 0.25,
+  performance: 0.25,
+  efficiency: 0.15
+};
 
 const Visualization = () => {
   const location = useLocation();
@@ -41,9 +48,11 @@ const Visualization = () => {
   const [selectedRunId, setSelectedRunId] = useState(location.state?.selectedRunId || null);
   const [trainingRuns, setTrainingRuns] = useState([]);
   const [selectedRunSummary, setSelectedRunSummary] = useState(null);
+  const [distributionPage, setDistributionPage] = useState(1);
   const [chartData, setChartData] = useState({
     trainingCurves: [],
     clientPerformance: [],
+    clientContributions: [],
     confusionMatrix: { data: [], classes: [] },
     clientDistribution: [],
     distributionStats: []
@@ -80,6 +89,7 @@ const Visualization = () => {
       setChartData({
         trainingCurves: [],
         clientPerformance: [],
+        clientContributions: [],
         confusionMatrix: { data: [], classes: [] },
         clientDistribution: [],
         distributionStats: []
@@ -110,6 +120,7 @@ const Visualization = () => {
     const modelPerformance = visualization.model_performance || visualization.client_performance;
     const clientDistribution = visualization.client_distribution;
     const confusionMatrix = visualization.confusion_matrix;
+    setDistributionPage(1);
 
     setChartData(prev => ({
       ...prev,
@@ -117,6 +128,7 @@ const Visualization = () => {
       clientPerformance: modelPerformance
         ? formatPerformanceData(modelPerformance)
         : formatHistoricalClientPerformance(finalRound),
+      clientContributions: formatClientContributionData(history),
       clientDistribution: clientDistribution ? formatDistributionData(clientDistribution) : [],
       distributionStats: clientDistribution ? formatDistributionStats(clientDistribution.stats) : [],
       confusionMatrix: confusionMatrix ? formatConfusionMatrixData(confusionMatrix) : { data: [], classes: [] }
@@ -188,6 +200,100 @@ const Visualization = () => {
       samples: data.sample_sizes?.[index] || 0
     }));
   };
+
+  const getClientSortValue = (clientId) => {
+    const match = String(clientId || '').match(/\d+/);
+    return match ? Number(match[0]) : Number.MAX_SAFE_INTEGER;
+  };
+
+  const clampPercent = (value) => Math.max(0, Math.min(100, Number(value) || 0));
+
+  const formatClientContributionData = (history = []) => {
+    if (!history.length) return [];
+
+    const accumulators = {};
+    history.forEach(roundData => {
+      (roundData.client_metrics || []).forEach(metrics => {
+        const rawClientId = metrics.client_id ?? Object.keys(accumulators).length;
+        const clientId = `客户端 ${rawClientId}`;
+        if (!accumulators[clientId]) {
+          accumulators[clientId] = {
+            clientId,
+            totalSamples: 0,
+            participationRounds: 0,
+            accuracySum: 0,
+            f1Sum: 0,
+            throughputSum: 0,
+            trainingTimeSum: 0
+          };
+        }
+        accumulators[clientId].totalSamples += Math.max(0, Number(metrics.num_samples) || 0);
+        accumulators[clientId].participationRounds += 1;
+        accumulators[clientId].accuracySum += Number(metrics.accuracy) || 0;
+        accumulators[clientId].f1Sum += Number(metrics.f1_score) || 0;
+        accumulators[clientId].throughputSum += Number(metrics.samples_per_second) || 0;
+        accumulators[clientId].trainingTimeSum += Number(metrics.training_time) || 0;
+      });
+    });
+
+    const values = Object.values(accumulators);
+    const totalSamples = values.reduce((sum, item) => sum + item.totalSamples, 0);
+    const maxAverageThroughput = Math.max(
+      0,
+      ...values.map(item => item.throughputSum / Math.max(1, item.participationRounds))
+    );
+
+    return values.map(item => {
+      const rounds = Math.max(1, item.participationRounds);
+      const avgAccuracy = item.accuracySum / rounds;
+      const avgF1Score = item.f1Sum / rounds;
+      const avgThroughput = item.throughputSum / rounds;
+      const sampleScore = totalSamples > 0 ? (item.totalSamples / totalSamples) * 100 : 0;
+      const participationScore = history.length > 0 ? (item.participationRounds / history.length) * 100 : 0;
+      const performanceScore = clampPercent(((avgAccuracy + avgF1Score) / 2) * 100);
+      const efficiencyScore = maxAverageThroughput > 0 ? (avgThroughput / maxAverageThroughput) * 100 : 0;
+      const contributionScore =
+        sampleScore * CONTRIBUTION_WEIGHTS.sample
+        + participationScore * CONTRIBUTION_WEIGHTS.participation
+        + performanceScore * CONTRIBUTION_WEIGHTS.performance
+        + efficiencyScore * CONTRIBUTION_WEIGHTS.efficiency;
+
+      return {
+        clientId: item.clientId,
+        contributionScore: Number(contributionScore.toFixed(2)),
+        sampleContribution: Number(sampleScore.toFixed(2)),
+        participationContribution: Number(participationScore.toFixed(2)),
+        performanceContribution: Number(performanceScore.toFixed(2)),
+        efficiencyContribution: Number(efficiencyScore.toFixed(2)),
+        totalSamples: item.totalSamples,
+        participationRounds: item.participationRounds,
+        avgAccuracy,
+        avgF1Score,
+        avgThroughput
+      };
+    }).sort((a, b) => b.contributionScore - a.contributionScore);
+  };
+
+  const buildSampleDistributionData = (clientPerformance = []) => (
+    [...clientPerformance]
+      .sort((a, b) => (b.samples || 0) - (a.samples || 0))
+      .map(item => ({
+        clientId: item.clientId,
+        samples: item.samples || 0
+      }))
+  );
+
+  const getChartWidth = (rowCount) => Math.max(CLIENT_CHART_MIN_WIDTH, rowCount * CLIENT_BAR_WIDTH);
+
+  const renderScrollableBarChart = (data, height, renderChart) => (
+    <div style={{ width: '100%', overflowX: 'auto', overflowY: 'hidden' }}>
+      <div style={{ width: getChartWidth(data.length), height }}>
+        <ResponsiveContainer width="100%" height="100%">
+          {renderChart(data)}
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
 
   const formatDistributionData = (data) => {
     const clientDistributions = data.client_distributions || [];
@@ -316,6 +422,39 @@ const Visualization = () => {
     { title: '损失', dataIndex: 'loss', key: 'loss', render: value => typeof value === 'number' ? value.toFixed(4) : '-' },
     { title: 'Samples/s', dataIndex: 'samplesPerSecond', key: 'samplesPerSecond', render: value => typeof value === 'number' ? value.toFixed(2) : '-' }
   ];
+
+  const sampleDistributionData = buildSampleDistributionData(chartData.clientPerformance);
+  const sampleTableData = [...chartData.clientPerformance]
+    .sort((a, b) => getClientSortValue(a.clientId) - getClientSortValue(b.clientId))
+    .map(item => ({
+      key: item.clientId,
+      clientId: item.clientId,
+      samples: item.samples || 0,
+      accuracy: item.accuracy || 0,
+      samplesPerSecond: item.samplesPerSecond || 0
+    }));
+
+  const sampleColumns = [
+    { title: '客户端', dataIndex: 'clientId', key: 'clientId', sorter: (a, b) => getClientSortValue(a.clientId) - getClientSortValue(b.clientId) },
+    { title: '样本数', dataIndex: 'samples', key: 'samples', sorter: (a, b) => a.samples - b.samples },
+    { title: '准确率', dataIndex: 'accuracy', key: 'accuracy', render: value => `${((value || 0) * 100).toFixed(2)}%` },
+    { title: 'Samples/s', dataIndex: 'samplesPerSecond', key: 'samplesPerSecond', render: value => Number(value || 0).toFixed(2) }
+  ];
+
+  const contributionColumns = [
+    { title: '排名', key: 'rank', render: (_, record, index) => index + 1 },
+    { title: '客户端', dataIndex: 'clientId', key: 'clientId' },
+    { title: '综合贡献度', dataIndex: 'contributionScore', key: 'contributionScore', render: value => `${Number(value || 0).toFixed(2)} / 100` },
+    { title: '样本贡献', dataIndex: 'sampleContribution', key: 'sampleContribution', render: value => `${Number(value || 0).toFixed(2)}%` },
+    { title: '参与贡献', dataIndex: 'participationContribution', key: 'participationContribution', render: value => `${Number(value || 0).toFixed(2)}%` },
+    { title: '表现贡献', dataIndex: 'performanceContribution', key: 'performanceContribution', render: value => `${Number(value || 0).toFixed(2)}%` },
+    { title: '效率贡献', dataIndex: 'efficiencyContribution', key: 'efficiencyContribution', render: value => `${Number(value || 0).toFixed(2)}%` }
+  ];
+
+  const pagedClientDistribution = chartData.clientDistribution.slice(
+    (distributionPage - 1) * DISTRIBUTION_PAGE_SIZE,
+    distributionPage * DISTRIBUTION_PAGE_SIZE
+  );
 
   return (
     <PageContainer>
@@ -456,6 +595,51 @@ const Visualization = () => {
           tab={<span><BarChartOutlined />客户端性能</span>}
           key="performance"
         >
+          <ChartCard title="客户端贡献度排行">
+            {chartData.clientContributions.length > 0 ? (
+              renderScrollableBarChart(chartData.clientContributions, 420, data => (
+                <BarChart data={data}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="clientId" angle={-45} textAnchor="end" height={90} />
+                  <YAxis domain={[0, 100]} />
+                  <Tooltip cursor={false} formatter={(value) => Number(value || 0).toFixed(2)} />
+                  <Legend />
+                  <Bar dataKey="contributionScore" fill="#1890ff" name="综合贡献度" />
+                </BarChart>
+              ))
+            ) : (
+              <Empty description="暂无贡献度数据" />
+            )}
+          </ChartCard>
+
+          <ChartCard title="客户端贡献度拆解">
+            {chartData.clientContributions.length > 0 ? (
+              <>
+                {renderScrollableBarChart(chartData.clientContributions, 420, data => (
+                  <BarChart data={data}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="clientId" angle={-45} textAnchor="end" height={90} />
+                    <YAxis domain={[0, 100]} />
+                    <Tooltip cursor={false} formatter={(value) => `${Number(value || 0).toFixed(2)}%`} />
+                    <Legend />
+                    <Bar dataKey="sampleContribution" fill="#52c41a" name="样本贡献" />
+                    <Bar dataKey="participationContribution" fill="#fa8c16" name="参与贡献" />
+                    <Bar dataKey="performanceContribution" fill="#722ed1" name="表现贡献" />
+                    <Bar dataKey="efficiencyContribution" fill="#13c2c2" name="效率贡献" />
+                  </BarChart>
+                ))}
+                <Table
+                  columns={contributionColumns}
+                  dataSource={chartData.clientContributions.map(item => ({ ...item, key: item.clientId }))}
+                  pagination={{ pageSize: 10 }}
+                  scroll={{ x: true }}
+                />
+              </>
+            ) : (
+              <Empty description="暂无贡献度拆解数据" />
+            )}
+          </ChartCard>
+
           <ChartCard title="客户端准确率对比">
             <ResponsiveContainer width="100%" height={400}>
               <BarChart data={chartData.clientPerformance}>
@@ -499,25 +683,28 @@ const Visualization = () => {
           </ChartCard>
 
           <ChartCard title="客户端样本数量分布">
-            <ResponsiveContainer width="100%" height={400}>
-              <PieChart>
-                <Pie
-                  data={chartData.clientPerformance}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ clientId, samples }) => `${clientId}: ${samples}`}
-                  outerRadius={80}
-                  fill="#8884d8"
-                  dataKey="samples"
-                >
-                  {chartData.clientPerformance.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
+            {sampleDistributionData.length > 0 ? (
+              <>
+                {renderScrollableBarChart(sampleDistributionData, 420, data => (
+                  <BarChart data={data}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="clientId" angle={-45} textAnchor="end" height={90} />
+                    <YAxis />
+                    <Tooltip cursor={false} />
+                    <Legend />
+                    <Bar dataKey="samples" fill="#1677ff" name="样本数" />
+                  </BarChart>
+                ))}
+                <Table
+                  columns={sampleColumns}
+                  dataSource={sampleTableData}
+                  pagination={{ pageSize: 10 }}
+                  scroll={{ x: true }}
+                />
+              </>
+            ) : (
+              <Empty description="暂无客户端样本数量数据" />
+            )}
           </ChartCard>
         </Tabs.TabPane>
 
@@ -526,20 +713,46 @@ const Visualization = () => {
           key="distribution"
         >
           <ChartCard title="客户端类别分布">
-            {chartData.clientDistribution.map(client => (
-              <div key={client.clientId} style={{ marginBottom: 24 }}>
-                <h3>{client.clientId}</h3>
-                <ResponsiveContainer width="100%" height={250}>
-                  <BarChart data={client.data}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="class" />
-                    <YAxis />
-                    <Tooltip formatter={(value, name, item) => [`${value.toFixed(1)}% (${item.payload.count} 个样本)`, '数据占比']} />
-                    <Bar dataKey="value" fill="#82ca9d" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            ))}
+            {chartData.clientDistribution.length > 0 ? (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                  <span style={{ color: '#6e6e73' }}>
+                    共 {chartData.clientDistribution.length} 个客户端，每页 {DISTRIBUTION_PAGE_SIZE} 个
+                  </span>
+                  <Pagination
+                    current={distributionPage}
+                    pageSize={DISTRIBUTION_PAGE_SIZE}
+                    total={chartData.clientDistribution.length}
+                    showSizeChanger={false}
+                    onChange={setDistributionPage}
+                  />
+                </div>
+                {pagedClientDistribution.map(client => (
+                  <div key={client.clientId} style={{ marginBottom: 24 }}>
+                    <h3>{client.clientId}</h3>
+                    <ResponsiveContainer width="100%" height={250}>
+                      <BarChart data={client.data}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="class" />
+                        <YAxis />
+                        <Tooltip formatter={(value, name, item) => [`${value.toFixed(1)}% (${item.payload.count} 个样本)`, '数据占比']} />
+                        <Bar dataKey="value" fill="#82ca9d" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                ))}
+                <Pagination
+                  current={distributionPage}
+                  pageSize={DISTRIBUTION_PAGE_SIZE}
+                  total={chartData.clientDistribution.length}
+                  showSizeChanger={false}
+                  onChange={setDistributionPage}
+                  style={{ textAlign: 'right' }}
+                />
+              </>
+            ) : (
+              <Empty description="暂无客户端类别分布数据" />
+            )}
           </ChartCard>
 
           <ChartCard title="数据分布统计">
