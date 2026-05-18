@@ -260,11 +260,19 @@ const ModelTraining = () => {
 
   const loadHistory = async () => {
     try {
-      const response = await fetch('http://localhost:5000/api/main/dashboard_stats');
-      const data = await response.json();
-      if (response.ok) {
-        setTrainingRuns(data.training_runs || []);
-        setSavedModels(data.saved_models || []);
+      const [historyResponse, modelResponse] = await Promise.all([
+        fetch('http://localhost:5000/api/train/history?limit=10'),
+        fetch('http://localhost:5000/api/model/history?limit=10')
+      ]);
+
+      if (historyResponse.ok) {
+        const historyData = await historyResponse.json();
+        setTrainingRuns(historyData.training_runs || []);
+      }
+
+      if (modelResponse.ok) {
+        const modelData = await modelResponse.json();
+        setSavedModels(modelData.models || []);
       }
     } catch (error) {
       console.error('获取历史记录失败', error);

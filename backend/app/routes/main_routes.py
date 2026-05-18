@@ -8,6 +8,23 @@ import os
 logger = logging.getLogger(__name__)
 main_bp = Blueprint('main', __name__)
 
+DASHBOARD_TRAINING_RUN_FIELDS = (
+    'id',
+    'timestamp',
+    'status',
+    'dataset_name',
+    'model_name',
+    'aggregation_algorithm',
+    'rounds',
+    'num_clients',
+    'final_accuracy'
+)
+
+
+def _dashboard_training_run_summary(record):
+    return {field: record.get(field) for field in DASHBOARD_TRAINING_RUN_FIELDS}
+
+
 @main_bp.route('/')
 def index():
     """返回API信息"""
@@ -70,8 +87,11 @@ def get_dashboard_stats():
                 ]
 
         num_datasets = len(data_routes.get_all_dataset_names())
-        training_runs = history_service.get_training_runs(10)
-        saved_models = history_service.get_model_records(10)
+        training_runs = [
+            _dashboard_training_run_summary(record)
+            for record in history_service.get_training_run_summaries(10)
+        ]
+        saved_models = history_service.get_model_record_summaries(10)
         recent_activities = activity_service.get_activities()
         
         return jsonify({

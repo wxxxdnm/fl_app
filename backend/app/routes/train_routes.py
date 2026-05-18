@@ -419,6 +419,31 @@ def get_training_status():
         logger.exception(f"Error getting training status: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
+@train_bp.route('/history', methods=['GET'])
+def get_training_history_records():
+    try:
+        try:
+            limit = int(request.args.get('limit', 20))
+        except (TypeError, ValueError):
+            return jsonify({'error': 'limit must be an integer'}), 400
+        if limit < 1:
+            return jsonify({'error': 'limit must be at least 1'}), 400
+        return jsonify({'training_runs': history_service.get_training_run_summaries(limit)}), 200
+    except Exception as e:
+        logger.exception(f"Error getting training history: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@train_bp.route('/history/<run_id>', methods=['GET'])
+def get_training_history_detail(run_id):
+    try:
+        record = history_service.get_training_run(run_id)
+        if not record:
+            return jsonify({'error': 'Training history record not found'}), 404
+        return jsonify({'training_run': record}), 200
+    except Exception as e:
+        logger.exception(f"Error getting training history detail: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
 @train_bp.route('/history/<run_id>', methods=['DELETE'])
 def delete_training_history(run_id):
     try:

@@ -92,6 +92,15 @@ class HistoryService:
     def get_training_runs(self, limit: int = 20) -> List[Dict]:
         return self._read_json(self.training_history_path)[:limit]
 
+    def get_training_run_summaries(self, limit: int = 20) -> List[Dict]:
+        return [self._training_run_summary(record) for record in self.get_training_runs(limit)]
+
+    def get_training_run(self, run_id: str) -> Dict:
+        for record in self._read_json(self.training_history_path):
+            if record.get("id") == run_id:
+                return record
+        return None
+
     def get_latest_training_run(self) -> Dict:
         records = self.get_training_runs(1)
         return records[0] if records else None
@@ -142,6 +151,87 @@ class HistoryService:
             reverse=True
         )
         return sorted_records[:limit]
+
+    def get_model_record_summaries(self, limit: int = 50) -> List[Dict]:
+        records = self._read_json(self.model_history_path)
+        by_path = {os.path.abspath(item.get("path", "")): item for item in records if item.get("path")}
+        for root, _, files in os.walk(self.checkpoint_dir):
+            for filename in files:
+                if not filename.endswith((".pth", ".pt")):
+                    continue
+                path = os.path.abspath(os.path.join(root, filename))
+                if path not in by_path:
+                    by_path[path] = self._checkpoint_file_summary(path)
+        sorted_records = sorted(
+            by_path.values(),
+            key=lambda item: item.get("timestamp") or item.get("modified_time") or "",
+            reverse=True
+        )
+        return [self._model_record_summary(record) for record in sorted_records[:limit]]
+
+    def _training_run_summary(self, record: Dict) -> Dict:
+        history = record.get("history") or []
+        summary = {
+            key: record.get(key)
+            for key in (
+                "id",
+                "timestamp",
+                "status",
+                "dataset_name",
+                "model_name",
+                "num_clients",
+                "num_rounds",
+                "client_fraction",
+                "aggregation_algorithm",
+                "iid",
+                "non_iid_alpha",
+                "non_iid_seed",
+                "device",
+                "batch_size",
+                "server_lr",
+                "server_momentum",
+                "proximal_mu",
+                "adaptive_beta1",
+                "adaptive_beta2",
+                "adaptive_tau",
+                "rounds",
+                "final_accuracy",
+                "final_loss",
+                "final_f1_score",
+                "error"
+            )
+        }
+        summary["rounds"] = record.get("rounds", len(history))
+        return summary
+
+    def _model_record_summary(self, record: Dict) -> Dict:
+        path = record.get("path")
+        modified_time = record.get("modified_time")
+        size_bytes = record.get("size_bytes", 0)
+        if path and os.path.exists(path) and (not modified_time or not size_bytes):
+            stat = os.stat(path)
+            modified_time = modified_time or datetime.datetime.fromtimestamp(stat.st_mtime).isoformat()
+            size_bytes = size_bytes or stat.st_size
+        return {
+            "id": record.get("id") or path,
+            "filename": record.get("filename") or (os.path.basename(path) if path else None),
+            "dataset_name": record.get("dataset_name"),
+            "model_name": record.get("model_name"),
+            "model_class": record.get("model_class"),
+            "rounds": record.get("rounds"),
+            "size_bytes": size_bytes,
+            "modified_time": modified_time
+        }
+
+    def _checkpoint_file_summary(self, path: str) -> Dict:
+        stat = os.stat(path)
+        return {
+            "id": path,
+            "path": path,
+            "filename": os.path.basename(path),
+            "size_bytes": stat.st_size,
+            "modified_time": datetime.datetime.fromtimestamp(stat.st_mtime).isoformat()
+        }
 
     def _enrich_model_record(self, record: Dict, path: str) -> Dict:
         if record.get("dataset_name") and record.get("model_name"):

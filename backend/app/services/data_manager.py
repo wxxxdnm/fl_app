@@ -4,6 +4,7 @@ from torchvision import datasets, transforms
 from .custom_dataset_manager import custom_dataset_manager
 import os
 import shutil
+import subprocess
 from typing import Tuple, Dict
 import logging
 import numpy as np
@@ -24,6 +25,7 @@ class DataManager:
         os.makedirs(self.cifar100_dir, exist_ok=True)
         self._stage_dataset_archive("cifar-10-python.tar.gz", self.cifar10_dir)
         self._stage_dataset_archive("cifar-100-python.tar.gz", self.cifar100_dir)
+        self._repair_windows_cache_permissions(self.torchvision_cache_dir)
 
         self.transforms = {
             'mnist': transforms.Compose([
@@ -78,6 +80,29 @@ class DataManager:
             except OSError as exc:
                 logger.warning("Unable to reuse dataset archive %s: %s", source_path, exc)
 
+    def _repair_windows_cache_permissions(self, target_dir: str) -> None:
+        if os.name != "nt" or not os.path.exists(target_dir):
+            return
+
+        try:
+            result = subprocess.run(
+                ["icacls", target_dir, "/grant", "*S-1-5-11:(OI)(CI)M", "/T", "/C"],
+                check=False,
+                capture_output=True,
+                text=True
+            )
+            if result.returncode != 0:
+                logger.warning("Unable to repair dataset cache permissions: %s", result.stderr.strip())
+        except OSError as exc:
+            logger.warning("Unable to run icacls for dataset cache permissions: %s", exc)
+
+    def _load_cifar_dataset(self, dataset_class, root: str, train: bool, transform):
+        try:
+            return dataset_class(root=root, train=train, download=True, transform=transform)
+        except PermissionError:
+            self._repair_windows_cache_permissions(root)
+            return dataset_class(root=root, train=train, download=True, transform=transform)
+
     def load_mnist(self, train: bool = True, batch_size: int = 64) -> DataLoader:
         """加载MNIST数据集"""
         if 'mnist' not in self.datasets:
@@ -113,20 +138,20 @@ class DataManager:
     def load_cifar10(self, train: bool = True, batch_size: int = 64) -> DataLoader:
         """加载CIFAR10数据集"""
         if 'cifar10' not in self.datasets:
-            self.datasets['cifar10'] = datasets.CIFAR10(
+            self.datasets['cifar10'] = self._load_cifar_dataset(
+                datasets.CIFAR10,
                 root=self.cifar10_dir,
                 train=True,
-                download=True,
                 transform=self.transforms['cifar10']
             )
 
         if train:
             dataset = self.datasets['cifar10']
         else:
-            dataset = datasets.CIFAR10(
+            dataset = self._load_cifar_dataset(
+                datasets.CIFAR10,
                 root=self.cifar10_dir,
                 train=False,
-                download=True,
                 transform=self.eval_transforms['cifar10']
             )
 
@@ -144,20 +169,20 @@ class DataManager:
     def load_cifar100(self, train: bool = True, batch_size: int = 64) -> DataLoader:
         """加载CIFAR100数据集"""
         if 'cifar100' not in self.datasets:
-            self.datasets['cifar100'] = datasets.CIFAR100(
+            self.datasets['cifar100'] = self._load_cifar_dataset(
+                datasets.CIFAR100,
                 root=self.cifar100_dir,
                 train=True,
-                download=True,
                 transform=self.transforms['cifar100']
             )
 
         if train:
             dataset = self.datasets['cifar100']
         else:
-            dataset = datasets.CIFAR100(
+            dataset = self._load_cifar_dataset(
+                datasets.CIFAR100,
                 root=self.cifar100_dir,
                 train=False,
-                download=True,
                 transform=self.eval_transforms['cifar100']
             )
 
@@ -191,29 +216,29 @@ class DataManager:
                 transform=self.eval_transforms['mnist']
             )
         elif dataset_name == 'cifar10':
-            full_dataset = datasets.CIFAR10(
+            full_dataset = self._load_cifar_dataset(
+                datasets.CIFAR10,
                 root=self.cifar10_dir,
                 train=True,
-                download=True,
                 transform=self.transforms['cifar10']
             )
-            eval_dataset = datasets.CIFAR10(
+            eval_dataset = self._load_cifar_dataset(
+                datasets.CIFAR10,
                 root=self.cifar10_dir,
                 train=True,
-                download=True,
                 transform=self.eval_transforms['cifar10']
             )
         elif dataset_name == 'cifar100':
-            full_dataset = datasets.CIFAR100(
+            full_dataset = self._load_cifar_dataset(
+                datasets.CIFAR100,
                 root=self.cifar100_dir,
                 train=True,
-                download=True,
                 transform=self.transforms['cifar100']
             )
-            eval_dataset = datasets.CIFAR100(
+            eval_dataset = self._load_cifar_dataset(
+                datasets.CIFAR100,
                 root=self.cifar100_dir,
                 train=True,
-                download=True,
                 transform=self.eval_transforms['cifar100']
             )
         elif custom_dataset_manager.is_custom_dataset(dataset_name):
@@ -352,7 +377,7 @@ class DataManager:
                 'classes': list(range(10))
             }
         elif dataset_name == 'cifar10':
-            dataset = datasets.CIFAR10(root=self.cifar10_dir, train=True, download=True)
+            dataset = self._load_cifar_dataset(datasets.CIFAR10, self.cifar10_dir, True, None)
             return {
                 'id': 'cifar10',
                 'name': 'CIFAR10',
@@ -362,7 +387,7 @@ class DataManager:
                 'classes': ['airplane', 'automobile', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck']
             }
         elif dataset_name == 'cifar100':
-            dataset = datasets.CIFAR100(root=self.cifar100_dir, train=True, download=True)
+            dataset = self._load_cifar_dataset(datasets.CIFAR100, self.cifar100_dir, True, None)
             return {
                 'id': 'cifar100',
                 'name': 'CIFAR100',

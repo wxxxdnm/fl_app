@@ -62,49 +62,62 @@ const Visualization = () => {
     loadVisualizationData(selectedRunId);
   }, []);
 
-  useEffect(() => {
-    if (!selectedRunId) return;
-    const selectedRun = trainingRuns.find(run => run.id === selectedRunId);
-    if (selectedRun) {
-      applyHistoricalRun(selectedRun);
+  const resetVisualizationData = () => {
+    setSelectedRunId(null);
+    setSelectedRunSummary(null);
+    setChartData({
+      trainingCurves: [],
+      clientPerformance: [],
+      clientContributions: [],
+      confusionMatrix: { data: [], classes: [] },
+      clientDistribution: [],
+      distributionStats: []
+    });
+  };
+
+  const loadRunDetail = async (runId) => {
+    try {
+      const response = await fetch(`http://localhost:5000/api/train/history/${encodeURIComponent(runId)}`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.training_run) {
+          applyHistoricalRun(data.training_run);
+          return;
+        }
+      }
+      resetVisualizationData();
+    } catch (error) {
+      console.error('Failed to load visualization run detail', error);
+      resetVisualizationData();
     }
-  }, [selectedRunId, trainingRuns]);
+  };
 
   const loadVisualizationData = async (targetRunId = selectedRunId) => {
     try {
-      const dashboardResponse = await fetch('http://localhost:5000/api/main/dashboard_stats');
-      if (dashboardResponse.ok) {
-        const dashboardData = await dashboardResponse.json();
-        const runs = dashboardData.training_runs || [];
+      const historyResponse = await fetch('http://localhost:5000/api/train/history?limit=10');
+      if (historyResponse.ok) {
+        const historyData = await historyResponse.json();
+        const runs = historyData.training_runs || [];
         setTrainingRuns(runs);
         const selectedRun = runs.find(run => run.id === targetRunId) || runs[0];
         if (selectedRun) {
           setSelectedRunId(selectedRun.id);
-          applyHistoricalRun(selectedRun);
+          await loadRunDetail(selectedRun.id);
           return;
         }
       }
-      setSelectedRunId(null);
-      setSelectedRunSummary(null);
-      setChartData({
-        trainingCurves: [],
-        clientPerformance: [],
-        clientContributions: [],
-        confusionMatrix: { data: [], classes: [] },
-        clientDistribution: [],
-        distributionStats: []
-      });
+      setTrainingRuns([]);
+      resetVisualizationData();
     } catch (error) {
       console.error('加载可视化数据失败', error);
+      setTrainingRuns([]);
+      resetVisualizationData();
     }
   };
 
   const handleRunChange = (runId) => {
     setSelectedRunId(runId);
-    const selectedRun = trainingRuns.find(run => run.id === runId);
-    if (selectedRun) {
-      applyHistoricalRun(selectedRun);
-    }
+    loadRunDetail(runId);
   };
 
   const formatIidLabel = (iid) => {
